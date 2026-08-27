@@ -1,16 +1,24 @@
-# Acoustic FSK modem
+# earshot
 
-docs/GUIDE.md is the guide to the lab page (lab.html), the original FSK instrument. Its screenshots (docs/screenshots/) and the
-tables between `<!-- gen:... -->` markers are generated from lab.html,
-app.js, diag.js, modem.js and dsp.js by `npm run guide`. `npm test` fails
-while the guide is behind those five files, and a PostToolUse hook in
-.claude/settings.json says so right after an edit.
+Two user guides, both partly generated from the pages by `npm run guide`
+(`tools/make-guide.js`, needs Google Chrome, about three minutes for both):
 
-After changing any of the five:
+- `docs/GUIDE.md` covers the product page. Sources: index.html, earshot.js,
+  worker.js, capture-worklet.js, air.js, ofdm.js, chirp.js, fec.js,
+  fountain.js, fft.js, diag.js, modem.js. Screenshots in
+  docs/screenshots/product/.
+- `docs/LAB.md` covers the lab page. Sources: lab.html, app.js, diag.js,
+  modem.js, dsp.js. Screenshots in docs/screenshots/lab/.
 
-1. `npm run guide` (needs Google Chrome, takes about a minute).
-2. Read the prose in docs/GUIDE.md around what changed and fix it by hand.
-   The generator refreshes pictures and tables, not sentences. A new
-   button or label must be described as **its visible text** or the check
-   fails.
+`npm test` fails while a guide is behind its sources, and a PostToolUse hook
+in .claude/settings.json says so right after an edit.
+
+After changing any source file:
+
+1. `npm run guide product` or `npm run guide lab` (or plain `npm run guide`
+   for both).
+2. Read the prose in the guide around what changed and fix it by hand. The
+   generator refreshes screenshots and the tables between `<!-- gen:... -->`
+   markers, not sentences. A new button, label or disclosure must be
+   described as **its visible text** or the check fails.
 3. `npm test`.

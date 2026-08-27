@@ -5,6 +5,10 @@
 v1.0.0 waits on one thing: a real over-the-air transfer with the OFDM engine
 between two physical devices. Everything below it is gated and green.
 
+- User guide for the product page, `docs/GUIDE.md`: a screenshot of every
+  state, taken from the live page by `npm run guide`; the FSK guide moved to
+  `docs/LAB.md`. `npm test` fails when either guide is behind the code.
+
 ## 0.9.0 — 2026-08-27
 
 The OFDM engine, end to end, and the product page.

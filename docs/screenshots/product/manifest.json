@@ -1,0 +1,51 @@
+{
+  "target": "product",
+  "page": "index.html",
+  "sourceHash": "54b5e827c7ed6b6e",
+  "sources": [
+    "index.html",
+    "earshot.js",
+    "worker.js",
+    "capture-worklet.js",
+    "air.js",
+    "ofdm.js",
+    "chirp.js",
+    "fec.js",
+    "fountain.js",
+    "fft.js",
+    "diag.js",
+    "modem.js"
+  ],
+  "files": [
+    "page.png",
+    "too-big.png",
+    "send-picked.png",
+    "sending.png",
+    "advanced-sending.png",
+    "phone.png",
+    "listening.png",
+    "receiving.png",
+    "advanced.png",
+    "received-locked.png",
+    "wrong-passphrase.png",
+    "received.png",
+    "receiving-noisy.png",
+    "advanced-noisy.png"
+  ],
+  "viewport": {
+    "width": 1280,
+    "height": 1120
+  },
+  "sample": {
+    "name": "readings.csv",
+    "bytes": 14149,
+    "onAir": 3329,
+    "frames": 7
+  },
+  "noisy": {
+    "snrDb": -2,
+    "droplets": 20,
+    "dropletCrcFail": 25,
+    "complete": true
+  }
+}

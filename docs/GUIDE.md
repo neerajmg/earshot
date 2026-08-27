@@ -1,332 +1,269 @@
-> This guide covers **the lab page** — `lab.html`, the original FSK modem with
-> all its instruments. The product page at the site root is the OFDM engine;
-> the README covers it. The lab is where the signal processing is visible.
+# earshot user guide
 
-# User guide
-
-This page moves a file from one laptop to another through the air. One laptop
-plays the file as sound; the other listens with its microphone and rebuilds the
-bytes. Nothing is installed on either side: both open the same folder in
-Chrome. This guide is for the person doing the transfer. The
-[README](../README.md) is for whoever wants to know how the modem works inside
-or wants to tune it.
+earshot sends a file from one device to the one next to it, as sound. The
+sending device plays the file through its speaker; the receiving device
+listens through its microphone, rebuilds the bytes, checks them, and offers
+the file to save. There is nothing to install and no network involved: both
+devices open the same web page. This guide is for the person doing the
+transfer. The [README](../README.md) is for whoever wants to know how it
+works inside.
 
 Every screenshot here, and every table under a heading marked *generated*, is
 produced from the page by `npm run guide`. `npm test` fails when the page has
-changed and the guide has not, so what you see here is what you get.
+changed and this guide has not, so what you see here is what you get.
 
-## What you need
+## What to expect
 
-- Two laptops, each with a speaker, a microphone and Google Chrome. One laptop
-  on its own is enough to try the page; see
-  [Trying it on one laptop](#trying-it-on-one-laptop).
-- This folder on both laptops. AirDrop, a USB stick or a zip is fine; there is
-  nothing to build.
-- Python 3, only to serve the folder. Any static file server does.
-- A quiet room and about half a metre between the laptops.
+- It is slow. Sound through air is a narrow channel: a few hundred bytes a
+  second, so a note or a key is seconds, a document a minute or two, a photo
+  a quarter of an hour. The table in
+  [How long it takes](#how-long-it-takes-generated) has the numbers.
+- It is audible. The sender plays a short upward sweep, then about two
+  seconds of dense, hiss-like tone, over and over until you stop it.
+- It is a broadcast. Anyone within earshot who has this page open receives
+  what you send. Set a passphrase when that matters; see
+  [Passphrase](#passphrase).
+- Both devices should sit still, close together, in a quiet room. A phone
+  waved about shifts the pitch of what it hears, and the receiver has to
+  chase it.
 
 ## Open the page
 
-On each laptop, in a terminal:
+Open **https://neerajmg.github.io/earshot/** on both devices. The published
+page is served over HTTPS, which the browser requires before it will hand a
+page the microphone; open it over plain HTTP from somewhere else and the
+receive side says `microphone needs HTTPS — open the published page.`
 
-    cd "Modem file transfer"
+To run it from a copy of the repository instead, in the folder that holds
+`index.html`:
+
     python3 -m http.server 8000
 
-Then open http://localhost:8000 in Chrome.
+and open http://localhost:8000 (`localhost` counts as secure). Serve it, do
+not double-click `index.html`: the receiver runs in a worker and an audio
+worklet, and browsers will not load those from a file on disk.
 
-The receiving side needs `localhost` (or `https`): Chrome only hands the
-microphone to a page on a secure address. The sending side does not, so on
-that laptop you can also double-click `index.html`. If the page is opened the
-wrong way, a banner across the top says so; sending, loopback and WAV decoding
-still work from there.
+It was built and tested in Chrome. On a phone you can add it to the home
+screen and it opens full screen, like an app.
 
-![The page after loading](screenshots/page.png)
+![The page after loading](screenshots/product/page.png)
 
-The header holds the two settings both laptops must share, **Preset** and
-**Audio rate**, and says whether audio is running. **Send** is on the left,
-**Receive** on the right. Each laptop uses one of the two.
+**Send** is one card, **Receive** the other; on a phone they stack. Each
+device uses one of the two. **Advanced**, under them, opens the engine line,
+a spectrogram and a log, which you only need when something is wrong.
 
 ## Receive
 
 Start the receiver first. Listening costs nothing, and the sender's first
-frames are lost if nobody is listening yet.
+seconds are wasted if nobody is listening yet. Starting late is not fatal,
+though: every frame announces the file, so a receiver that joins part way
+still gets it.
 
-1. Pick the **Preset** the sender will use. Start with `robust`.
-2. Leave **Audio rate** on `auto`.
-3. Press **Start listening** and allow the microphone when Chrome asks.
-4. Read the line under the buttons. It names the microphone and should say
-   `AEC false NS false AGC false`. If any of the three says `true`, Chrome kept
-   some of its voice processing on. Two separate laptops usually still work;
-   a laptop listening to itself will not.
-5. Keep this tab in front and the laptop awake. Chrome throttles a background
-   tab and the audio gets gaps. The page asks the system for a wake lock;
-   `caffeinate -d` in a terminal does the same by hand.
+1. Press **Listen** and allow the microphone when the browser asks. The
+   button turns into **Stop listening** and the status line says
+   `listening… start the sender on the other device.`
+2. Keep the page in front and the device still. If you switch away, the
+   browser may starve the audio; the log under **Advanced** says
+   `page hidden - audio may be throttled` when that happens.
+3. As frames arrive, a progress bar appears with the file's name and how
+   much of it is in. The size shown there is the size on the air, after
+   compression, so it is often smaller than the file.
+4. When the file is complete, the status says `received.`, the result box
+   names the file, and listening stops by itself.
+5. Press **Save file**. On a phone that offers a share sheet, that is what
+   opens; otherwise the file downloads.
 
-![Receiver listening, a transfer under way](screenshots/receive-listening.png)
+![Listening](screenshots/product/listening.png)
 
-Once frames arrive, the line under the plots names the file and counts frames,
-the frame map fills in green, one square per frame, and the log shows every
-frame as it comes. When every frame is in and the file's CRC-32 matches,
-**Download file** lights up and the tab title changes to `received <name>`,
-so you can see it from another window.
+![A transfer part way through](screenshots/product/receiving.png)
 
-![Receiver after a complete transfer](screenshots/receive-done.png)
+![Received and ready to save](screenshots/product/received.png)
 
-Press **Download file** to save it. **Reset** clears the receiver for the next
-file; the microphone can stay on. **Stop** next to it turns the microphone
-off.
+If the sender set a passphrase, the result box asks for it before
+**Save file** appears; see [Passphrase](#passphrase).
 
 ## Send
 
-1. Set the same **Preset** as the receiver.
-2. Choose the file. The line under the chooser says how many frames it is and
-   how long one pass takes at this preset.
-3. Set **Passes**. Each pass sends the whole file again; the receiver keeps
-   the frames it has and fills the gaps from later passes. Three is a good
-   default in a normal room, one is enough on a quiet desk. **until stopped**
-   repeats until you press **Stop**, which is handy when the receiver is slow
-   to get going.
-4. Leave **Level** where it is. It sets how loud the page plays into the
-   laptop's volume control; the volume control does the rest.
-5. Speaker at about 40 to 60 % volume, laptops about half a metre apart, then
-   **Play**.
+1. **Choose a file**, or drop one on the box. Up to 2 MB; anything bigger
+   is refused with a note saying so. The line under the box says how big
+   the file is and roughly how long it will take.
+2. Optionally type a passphrase in the box under it. See
+   [Passphrase](#passphrase).
+3. Wait until the other device says it is listening, then press
+   **Start sending**. The status says `preparing…` for a moment
+   (compression, and encryption if you set a passphrase), then counts
+   frames and the time left.
+4. Volume somewhere in the middle. A speaker driven into distortion is
+   worse than a quieter one, and the two devices should be close anyway.
+5. **The sender does not stop by itself.** It keeps playing frames, because
+   it cannot hear whether the receiver is done and extra frames only help a
+   receiver that missed some. When the other device says `received.`, press
+   **Stop**. Past the estimate the status adds
+   `keep going until the receiver has it`.
 
-![Sender with a file chosen](screenshots/send-ready.png)
+![A file chosen](screenshots/product/send-picked.png)
 
-The progress bar and the line under it show which pass and frame the sender
-is on and roughly how long is left. Press **Stop** as soon as the receiver
-says the file is complete; nothing after that is needed.
+![Sending](screenshots/product/sending.png)
 
-The sound is two alternating tones, around 1.5 and 2.1 kHz on `robust`. It
-gets tiresome, but a quiet room is what makes it work.
+![Too big](screenshots/product/too-big.png)
 
-## Reading the receiver
+## Passphrase
 
-Six numbers, three plots and a log say what is going on. Here is what each
-should look like.
+Sound is a broadcast: any device in the room with this page open and
+**Listen** pressed receives the file. If that matters, type a passphrase in
+the Send card before you press **Start sending**. The file is encrypted with
+it before it goes on the air, and nothing of the passphrase itself is
+transmitted; tell the other person the passphrase some other way.
 
-![The six statistics](screenshots/stats.png)
+On the receiving side the transfer looks the same until it completes. Then
+the result box says `encrypted by the sender.` and shows a passphrase field
+with an **Unlock** button. Type the passphrase and press **Unlock**; the box
+changes to `ready to save.` and **Save file** appears. A wrong passphrase is
+reported, not silently decrypted into garbage, and you can try again.
 
-- **SNR, dB**: how far the tones stand above the noise, measured on the last
-  frame's sync word. Above about 15 dB both presets decode almost everything.
-  In the simulated channel `robust` keeps going down to about 11 dB while
-  `fast` is losing frames at 10 (see [eval-results.md](../eval-results.md)).
-- **tone balance, dB**: how much louder one tone is than the other, measured
-  on the preamble. Near 0 is right. Past 12 dB either way the log adds a hint
-  to move the laptop: the room is cancelling one tone at the microphone.
-- **sync correlation**: how well the start of the last frame matched the
-  expected pattern, 0 to 1. The page needs 0.5 to accept a frame at all;
-  clean audio scores close to 1.
-- **frames ok / seen**: frames whose CRC passed, over frames the page tried
-  to decode. A widening gap means the signal is marginal.
-- **bits fixed, last frame**: bits the error-correcting code repaired in the
-  last frame, and, after the first pass, which pass's scrambling it decoded
-  under. Zero on a quiet desk. The higher it climbs, the closer to the edge
-  you are; `+N bad` means N codewords could not be repaired at all.
-- **audio drops**: gaps the page noticed in the microphone stream. It should
-  stay at 0. If it climbs, the tab is in the background or the laptop is
-  busy.
+![Received, waiting for the passphrase](screenshots/product/received-locked.png)
 
-![Spectrogram](screenshots/spectrogram.png)
+![A wrong passphrase](screenshots/product/wrong-passphrase.png)
 
-The spectrogram scrolls from right to left and covers 0 to 5 kHz, low at the
-bottom. The two faint white lines mark where the tones should be. A good
-signal is two bright bands sitting on those lines with dark gaps between
-frames. Bright smears elsewhere are room noise. A band on one tone and not
-the other is the room notching one of them; see tone balance above.
+## How long it takes (generated)
 
-![Decision plot](screenshots/decision.png)
+<!-- gen:timing -->
+| file | frames | sound |
+|---|---:|---:|
+| a note, a key, a config (2.0 kB) | 5 | 0:10 |
+| a small document (30.0 kB) | 42 | 1:27 |
+| a photo (300.0 kB) | 402 | 13:50 |
+| the 2 MB ceiling (2.00 MB) | 2733 | 94:05 |
 
-The decision plot shows the last 3 s of the value the demodulator slices:
-positive for the mark tone, negative for space. A frame is a dense block
-that swings fully up and down. The orange line is the slicing threshold and
-should sit in the middle of the swing. Green shading is a frame that
-decoded, red is one that failed, blue is one being decoded right now. The
-gaps between frames should be flat. A thin band, or a swing that does not
-reach the edges, is a weak signal.
+One frame is 2.07 s of sound and carries 768 bytes of the file, 372 bytes per second. The table is for a file that does not compress and a transfer that loses nothing; text usually compresses two to three times, and every lost frame adds one more.
+<!-- /gen:timing -->
 
-Under the plots: the file line and progress bar, the frame map (green once a
-frame is in), and the log. The log shows every sync with its correlation and
-SNR, every frame with its outcome and how many bits were fixed, and status
-messages. Red is bad, green is good, blue is status.
+The estimate the page shows when you choose a file assumes some compression
+and a clean transfer, so a photo will usually take longer than it says, and
+a text file less. What helps: the devices close together, still, and the
+room quiet. What does not help: turning the volume all the way up.
 
-## Presets and how long it takes (generated)
+## On a phone
 
-<!-- gen:presets -->
-| preset | baud | tones | one frame | 1 kB, one pass | 10 kB, one pass | payload rate |
-|---|---:|---|---:|---:|---:|---:|
-| `robust` | 300 | 1500 / 2100 Hz | 2.39 s | 1:24 (35 frames) | 13:35 | 13 B/s |
-| `fast` | 1200 | 2400 / 3600 Hz | 0.66 s | 0:23 (35 frames) | 3:45 | 45 B/s |
-<!-- /gen:presets -->
+![The page on a phone](screenshots/product/phone.png)
 
-`robust` works in most rooms and is the one to try first. `fast` is four
-times quicker and fine on a quiet desk, but in a lively room the echo of one
-symbol lands on the next and frames fail; more passes help, moving closer
-helps more.
+The cards stack. **Save file** opens the share sheet where there is one, so
+the file can go straight to another app. The page asks the system to keep
+the screen on while it is sending or listening; if the screen locks anyway,
+listening stops, so keep the phone awake.
 
-Both presets are meant for two machines a little apart, which is the case that
-works: `robust` carried a file from a phone to a laptop on the first try. A
-laptop listening to its **own** speaker is a different and much harder
-channel, and on the machine this was developed on it does not decode at all:
-see [One laptop, its own microphone](#one-laptop-its-own-microphone).
+## Under Advanced
 
-Both pages must be on the same preset. **Audio rate** normally stays on
-`auto`; forcing 44100 or 48000 is only for checking that a rate mismatch
-between the two laptops still works, which it does.
+![Advanced, during a transfer](screenshots/product/advanced.png)
 
-## Trying it on one laptop
+Open **Advanced** when you want to see what the engine is doing.
 
-- **Digital loopback**: choose a file and press it. The sender's frames go
-  straight into the receiver code, no sound. It proves the page is intact,
-  and it takes a second.
+- The first line says the audio rate and, once listening, what the browser
+  did with the microphone: `mic AEC false NS false AGC false` is what you
+  want. The page asks for echo cancelling, noise suppression and automatic
+  gain to be off, because all three eat the signal; a browser that keeps one
+  on says `true` there.
+- The spectrogram shows what the microphone hears, so it stays blank on the
+  sending side. It scrolls right to left and covers 0 to 5 kHz, low at the
+  bottom. The signal occupies 1.5 to 7.5 kHz, so you see its lower part: a
+  bright band from the white line at 1.5 kHz to the top of the picture, in
+  two-second blocks with short gaps between them. A blank spectrogram while
+  the other device is playing means the microphone is not hearing it.
+- The log. `listening (worklet)` when the microphone opens; `frame ok (3
+  droplets, 0 bad)` for each frame decoded, where a droplet is one of the
+  three pieces of the file inside a frame and `bad` counts pieces that
+  failed their check; `audio gap` when the browser dropped some audio, which
+  happens when the page is in the background. On the sending side,
+  `sending readings.csv: 13.8 kB -> 3.3 kB on air, encrypted` records what
+  went out.
 
-  ![After a digital loopback](screenshots/loopback.png)
+![Advanced, while sending](screenshots/product/advanced-sending.png)
 
-- **Download WAV**, then **Decode a WAV instead**: renders the transmission
-  to a WAV file at 48 kHz or, to keep it small, 16 kHz, which you can then
-  hand to the receive side's WAV chooser. Same as loopback, through a file. A
-  WAV made here can also be played from a phone or anything else with a
-  speaker; the page does not have to be the one playing.
-- **Speaker to microphone on one laptop**: press **Start listening**, then
-  play a WAV from a terminal with `afplay file.wav`. Chrome tries to cancel
-  the page's own sound out of the microphone, and macOS *Voice Isolation*
-  strips the tones; the page asks for the cancelling to be off (check the mic
-  line), and the mic mode is set in Control Center, while the mic is live, to
-  *Standard*. Even with all of that, this path did not decode on the machine
-  this was written on; the section below has the measurements.
-- **record mic to WAV**: tick it before or during a transfer and the receiver
-  keeps what the microphone heard; **Download recording** saves it. This is
-  how a bad room becomes a test case: decode the recording later with
-  **Decode a WAV instead**, or with `node tools/decode-wav.js recording.wav
-  robust` to see every sync and frame the decoder finds.
+The links at the bottom of **Advanced** lead to [the lab page](LAB.md), the
+original modem with all its instruments, and the device checks: a page that
+measures whether this device can run audio at 48 kHz, whether its microphone
+hears the whole band, the room's echo, the speaker's loudness headroom, and
+a forty-minute soak of the receive pipeline.
 
 ## When it does not work
 
-![A noisy transfer: failed frames in red, holes in the frame map](screenshots/receive-noisy.png)
+![Receiving through noise](screenshots/product/receiving-noisy.png)
+
+![The log during a noisy transfer](screenshots/product/advanced-noisy.png)
 
 | What you see | What it means | What to do |
 |---|---|---|
-| Level meter stuck at `-120 dBFS`, nothing in the log after **Start listening** | The page is getting no audio | Check which microphone the mic line names; pick the right input in System Settings, Sound |
-| A banner about a secure context, or `no getUserMedia here` in the log | The page was opened from disk | Serve the folder and open http://localhost:8000 |
-| `CLIP` in the level meter, sync correlation low | Too loud | Turn the speaker down; move the laptops apart |
-| Syncs appear in the log, then `CRC fail` on every frame | The signal arrives but too damaged | Quieter room, closer laptops, `robust`; check both pages use the same preset |
-| Tone balance past 12 dB, or `one tone is much weaker` in the log | A reflection cancels one tone at the microphone | Move either laptop about 10 cm |
-| **audio drops** climbing | The tab is being throttled | Keep the receiver tab in front, laptop awake (`caffeinate -d`) |
-| Works on `robust`, fails on `fast` | Room echo smears symbols at 1200 baud | More passes, laptops closer, or stay on `robust` |
-| `all frames present but the file CRC-32 does not match` | A frame got through with wrong bytes | Keep sending; a later pass replaces it |
-| Same laptop: tones in the spectrogram, no frames decode | Known: a laptop hearing its own speaker is a much harder channel than two machines apart | Mic line must say `AEC false`, mic mode *Standard*; otherwise use two laptops, or `node tools/find-tones.js` |
-| Same laptop: nothing in the spectrogram while `afplay` runs | Sound is going to headphones or another output | Make the speakers the output device and unmute |
+| `microphone needs HTTPS — open the published page.` | The page was opened over plain HTTP or from disk | Use the published page, or serve the folder and open http://localhost:8000 |
+| **Listen** does nothing, or an error about the microphone | The browser has no permission, or no microphone | Allow the microphone in the browser's site settings; check the system input device |
+| `listening…` and nothing else while the other device is playing | The microphone is not hearing the signal | Open **Advanced**: a blank spectrogram means no sound arrives. Sender louder and closer, nothing covering the microphone, sender's sound not going to headphones or a Bluetooth speaker |
+| Progress bar appears, then stalls or creeps | Frames are being lost; `bad` counts in the log climb | Keep the sender going; it is built to fill the gaps. Closer, stiller, quieter helps more than louder |
+| `audio gap` in the log, progress stalls | The page is in the background or the device is busy | Bring the page to the front and leave it there |
+| `page hidden - audio may be throttled` | You switched tabs or apps | Same |
+| Sender says `keep going until the receiver has it` | The estimate has passed, which is normal in a noisy room | Wait for the receiver to say `received.`, then press **Stop** |
+| `wrong passphrase (or a corrupted transfer that still passed CRC)` | The passphrase differs from the sender's | Type it again, exactly; passphrases are case-sensitive |
+| `Over 2 MB — at the speed of sound through air that is hours. Smaller, please.` | The file is over the limit | Send something smaller, or compress it first |
+| `transfer not complete` | **Unlock** was pressed before the transfer finished | Wait for `received.` |
+| **Save file** does nothing on a phone | The share sheet was dismissed | Press it again |
 
-## Over the air, from a phone
-
-A phone is the easiest second device, and it is a real test: separate speaker,
-separate microphone, separate clock. Render a transmission with **Download
-WAV** or
-
-    node tools/make-wav.js notes.txt out.wav robust 2
-
-send the WAV to the phone, start the receiver (**Start listening**, or
-`npm run listen` for a terminal instead of the browser), and play it with the
-phone a hand's width away, facing the laptop. Turn Bluetooth off so it does
-not go to headphones, and turn any volume limiting off.
-
-This is what a good transfer looks like, and it is the first one that was
-tried:
-
-| | |
-|---|---|
-| SNR | 31.3 dB |
-| tone balance | +2.4 dB |
-| sync correlation | 0.68 |
-| frames ok / seen | 12 / 14 |
-| audio drops | 0 |
-| result | 148 B, 5 of 5 frames, CRC-32 ok |
-
-Two of the fourteen frames failed their CRC and the second pass replaced
-them; that is the carousel doing its job, and why **Passes** defaults above
-one. The margin here was not generous: 0.68 sync correlation against 1.00 on
-a clean signal, and the microphone sat around -41 dBFS. Louder, closer, or a
-quieter room all buy margin, and the frame map fills sooner for it.
-
-## One laptop, its own microphone
-
-Playing into the same machine's microphone is the easiest test to reach for
-and the least representative one. Measured on a MacBook Air, at 50 % volume,
-with the speakers as the output device and echo cancelling confirmed off:
-
-- The tones arrive. A recording of a transmission has the two frequencies at
-  about -28 dBFS with a 113 dB dynamic range, and a 6.7 ms tone burst decays
-  20 dB within 6 ms, so the room is not smearing symbols together.
-- The preamble is found: the receiver reports sync correlation around 0.6 to
-  0.7 and estimated SNR near 30 dB.
-- The sync word behind it does not survive, so no frame is ever accepted. In
-  the middle of a frame individual symbols are separated by 5 to 13 dB, but
-  the run of symbols does not match what was sent.
-
-Eight different tone pairs between 750 Hz and 3450 Hz were tried
-(`node tools/find-tones.js`, which plays real frames on each pair and reports
-which decode). None of them decoded, so this is not about picking better
-tones for the room.
-
-Every other path works, which is what makes this specific: the simulated
-channel (`npm run eval`, including echo, noise, drift and rate mismatch), the
-digital loopback, the WAV round trip, the real page driven in headless Chrome
-with a WAV as its microphone (`npm run e2e`), and a phone playing to the
-laptop across a bit of desk all deliver files byte-for-byte. It is a machine
-hearing *itself* that fails, not the modem.
-
-If you want to chase it further, `tools/find-tones.js` leaves the recording as
-`find-tones-recording.wav`, and `node tools/decode-wav.js recording.wav
-robust` prints every sync and frame the decoder finds in it.
+When a transfer fails in a way this table does not cover, the lab page can
+record what the microphone heard as a WAV file, which is the most useful
+thing to attach to a bug report; see [LAB.md](LAB.md).
 
 ## Every control
 
-Header: **Preset** picks the tones and speed, and must match on both pages.
-**Audio rate** forces the sample rate of the audio system; leave it on
-`auto`. The text after it says whether audio is running and at what rate.
+Send card: **Choose a file** (or drop one on the box), the passphrase box
+under it, **Start sending**, which becomes **Stop** while sending, then the
+progress bar and status line.
 
-Send: the file chooser, then **Passes** (how many times to send the whole
-file) or **until stopped**, and **Level**, the page's own output gain.
-**Play** starts, **Stop** stops. **Digital loopback** feeds the receiver
-directly. **Download WAV** renders the transmission to a file at the rate
-chosen in the menu next to it. The progress bar and status line under them
-track the transfer.
+Receive card: **Listen**, which becomes **Stop listening** while the
+microphone is open, the progress bar and status line, and the result box
+with the file's name, the passphrase field and **Unlock** when the sender
+encrypted, **Save file** when the file is ready, and a line saying which.
 
-Receive: **Start listening** opens the microphone, **Stop** closes it,
-**Reset** forgets everything received so far. **record mic to WAV** and
-**Download recording** keep and save what the microphone heard. **Decode a
-WAV instead** runs a file through the receiver in place of the microphone.
-Then the mic line, the level meter, the six statistics, the spectrogram, the
-decision plot, the file line with its progress bar, the frame map, **Download
-file** with the result next to it, and the log.
+**Advanced** opens the engine line, the spectrogram, the log, and links to
+the lab page and the device checks.
 
 ## Limits (generated)
 
 <!-- gen:limits -->
-- Largest file: 2,097,120 bytes (2.00 MB), 32 bytes per frame and a two-byte frame number.
-- **Passes**: 1 to 99, default 3; or **until stopped**.
-- **Level**: 0.05 to 1, default 0.5.
-- **record mic to WAV** stops itself after 10 minutes.
-- **Download WAV** refuses to render more than 400 MB; use fewer passes or 16 kHz.
-- Frame: 32 preamble + 32 sync + 608 payload symbols; 38 bytes become 76 through Hamming(8,4); CRC-16 per frame, CRC-32 per file.
+- Files up to 2 MB (2,097,152 bytes). Bigger ones are refused before anything plays.
+- File names travel as up to 64 bytes of UTF-8; longer names arrive cut short.
+- Compression is gzip, used only when it saves at least 5 %; the log line under **Advanced** shows the size before and after.
+- Passphrase: AES-256-GCM, key derived from the passphrase with PBKDF2-SHA-256 over 210,000 iterations, fresh salt and nonce per transfer. A wrong passphrase is detected, not silently decrypted to garbage.
+- Audio runs at 48000 Hz. A device that cannot is resampled, and **Advanced** says so.
+- The log under **Advanced** keeps the last 250 lines.
 <!-- /gen:limits -->
+
+## The numbers (generated)
+
+How the sound is made, for the curious. The README's "How it works" is the
+prose version.
+
+<!-- gen:engine -->
+- 1024-point FFT at 48000 Hz: subcarriers 46.875 Hz apart, bins 32 to 159 (1500 to 7453 Hz). 116 carry data as QPSK, 8 are pilots that track the two devices' clocks, 4 stay silent so the noise floor is measured every symbol.
+- 37.5 symbols per second: 1024 samples plus a 256-sample cyclic prefix, so echoes up to 5.3 ms late do no harm.
+- A frame: a 40 ms chirp (1500 to 5500 Hz) that the receiver finds with a matched filter, a 10 ms guard, one channel-estimation symbol, 2 signalling symbols that say what the frame is, 72 data symbols, and a 15 ms gap: 2.07 s.
+- Coding: K=7 rate-1/2 convolutional, soft-decision Viterbi, each bit weighted by its subcarrier's SNR so a dead frequency counts as unknown rather than wrong. 1043 bytes come out of a frame: a 96-byte manifest (name, size, checksum, flags) and 3 droplets of 264 bytes.
+- Fountain: the file is cut into 256-byte blocks and windows of 256 blocks (64 kB). Droplets are blocks, then random combinations of blocks; any enough of them rebuild a window, so a lost frame costs time, never a pass.
+<!-- /gen:engine -->
 
 ## Keeping this guide current
 
-`npm run guide` runs `tools/make-guide.js`. It renders a small sample
-transfer, opens the page in headless Chrome, takes the screenshots above from
-the live page (the microphone is a fake one, fed the rendered audio in real
-time with a little white noise under it so the numbers look like a room; the
-noisy example is the same audio under much more noise), and
-rewrites the *generated* tables from the presets, frame layout and limits in
-the code. It then records which versions of `index.html`, `app.js`,
-`diag.js`, `modem.js` and `dsp.js` it saw.
+`npm run guide product` runs `tools/make-guide.js` for this page. It prepares
+a sample file (a 14 kB CSV of sensor readings, with a passphrase), opens the
+page in headless Chrome, and takes the screenshots above from the live page:
+the static states directly, and the receiving states by feeding the rendered
+transfer to a fake microphone in real time, with a little white noise under it
+so the spectrogram looks like a room. The noisy example is the same transfer
+under enough noise that pieces of frames fail their checks. It then rewrites
+the *generated* tables from the constants in the code and records which
+versions of the page's source files it saw.
 
-`npm test` includes a check that fails when any of those five files has
-changed since the last run, when a table is out of date, when a screenshot is
-missing, or when a button or label on the page is not named in this guide.
-Editing one of the five files inside Claude Code also triggers the same check
-straight away, through the hook in `.claude/settings.json`.
+`npm test` includes a check that fails when any of those files has changed
+since the last run, when a table is out of date, when a screenshot is missing
+or unused, or when a button, label or disclosure on the page is not named in
+this guide. Editing one of the files inside Claude Code triggers the same
+check straight away, through the hook in `.claude/settings.json`.
 
 The generator does not write sentences. After a change that a user would
 notice, regenerate, then read the section it touches and fix the words.

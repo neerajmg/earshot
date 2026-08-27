@@ -13,6 +13,9 @@ The receiver hears the transmission, reassembles the file, checks it, and offers
 it to save. If you set a passphrase, only someone who knows it can open what
 arrives.
 
+The [user guide](docs/GUIDE.md) walks through a transfer with a screenshot of
+every step. It is regenerated from the page, so it matches what you see.
+
 ## Honest numbers
 
 Sound through air is a narrow channel. earshot moves roughly **350–500 bytes per
@@ -50,7 +53,7 @@ measure the noise floor every 27 ms.
 The repository also contains the project's first modem — a 2-FSK build with
 spectrograms, decision plots and a frame map — preserved intact as
 [the lab page](https://neerajmg.github.io/earshot/lab.html), documented in
-[docs/GUIDE.md](docs/GUIDE.md). The measurements that shaped the OFDM design
+[docs/LAB.md](docs/LAB.md). The measurements that shaped the OFDM design
 are in [docs/experiments/](docs/experiments/), and per-scenario results in
 [eval-ofdm.md](eval-ofdm.md) and [eval-results.md](eval-results.md).
 
@@ -75,6 +78,7 @@ npm run serve                # local http://localhost:8000
 | `ofdm.js`, `chirp.js`, `fec.js`, `fountain.js`, `fft.js` | the OFDM physical layer |
 | `lab.html`, `app.js`, `dsp.js`, `diag.js`, `modem.js` | the FSK lab, preserved |
 | `test/`, `tools/` | gates for every claim above |
+| `docs/`, `tools/make-guide.js` | the user guides, screenshots taken from the real pages; `npm test` fails when they lag |
 
 Every scenario in the eval tables is a seeded, reproducible test. The
 simulated channel includes white noise, comb filtering, fractional-delay

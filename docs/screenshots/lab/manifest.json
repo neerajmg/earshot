@@ -1,4 +1,6 @@
 {
+  "target": "lab",
+  "page": "lab.html",
   "sourceHash": "f7eb1814abf5e664",
   "sources": [
     "lab.html",
@@ -18,11 +20,11 @@
     "decision.png",
     "receive-done.png"
   ],
-  "preset": "robust",
   "viewport": {
     "width": 1280,
     "height": 1120
   },
+  "preset": "robust",
   "sample": {
     "name": "notes.txt",
     "bytes": 453,
