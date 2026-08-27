@@ -4,7 +4,7 @@
 // The guide is hand-written prose plus two kinds of generated content: the
 // screenshots in docs/screenshots/, taken from the real page in headless
 // Chrome, and the tables between <!-- gen:NAME --> and <!-- /gen:NAME -->
-// markers, computed from modem.js, dsp.js, app.js and index.html. A manifest
+// markers, computed from modem.js, dsp.js, app.js and lab.html. A manifest
 // records which sources the screenshots were taken from, so `--check` can
 // tell when the page changed and the pictures did not.
 //
@@ -28,7 +28,7 @@ const GUIDE = path.join(root, 'docs', 'GUIDE.md');
 const SHOTS = path.join(root, 'docs', 'screenshots');
 const MANIFEST = path.join(SHOTS, 'manifest.json');
 // Anything a user can see or hear comes from these five files.
-const PRODUCT = ['index.html', 'app.js', 'diag.js', 'modem.js', 'dsp.js'];
+const PRODUCT = ['lab.html', 'app.js', 'diag.js', 'modem.js', 'dsp.js'];
 function findChrome() {
   const { execSync } = require('child_process');
   if (process.env.CHROME) return process.env.CHROME;
@@ -87,10 +87,10 @@ function renderBlocks() {
   const maxBytes = 0xFFFF * Modem.FRAME.DATA;                       // seq is two bytes in the frame header
   const recSec = Number(grab('app.js', /const REC_MAX_SEC = (\d+)/, 'REC_MAX_SEC'));
   const wavCap = grab('app.js', /total \* 2 > (\d+e\d+)/, 'the WAV size cap');
-  const passes = read('index.html').match(/id="passes" value="(\d+)" min="(\d+)" max="(\d+)"/);
-  if (!passes) throw new Error('could not find the Passes input in index.html; update tools/make-guide.js');
-  const level = read('index.html').match(/id="amp" min="([\d.]+)" max="([\d.]+)" step="[\d.]+" value="([\d.]+)"/);
-  if (!level) throw new Error('could not find the Level slider in index.html; update tools/make-guide.js');
+  const passes = read('lab.html').match(/id="passes" value="(\d+)" min="(\d+)" max="(\d+)"/);
+  if (!passes) throw new Error('could not find the Passes input in lab.html; update tools/make-guide.js');
+  const level = read('lab.html').match(/id="amp" min="([\d.]+)" max="([\d.]+)" step="[\d.]+" value="([\d.]+)"/);
+  if (!level) throw new Error('could not find the Level slider in lab.html; update tools/make-guide.js');
   const limits = [
     `- Largest file: ${maxBytes.toLocaleString('en-US')} bytes (${fmtBytes(maxBytes)}), ${Modem.FRAME.DATA} bytes per frame and a two-byte frame number.`,
     `- **Passes**: ${passes[2]} to ${passes[3]}, default ${passes[1]}; or **until stopped**.`,
@@ -116,7 +116,7 @@ function strip(html) { return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').
 
 // Every button and labelled control on the page, by the text a user sees.
 function controlLabels() {
-  const html = read('index.html');
+  const html = read('lab.html');
   const out = new Set();
   for (const m of html.matchAll(/<button[^>]*>([\s\S]*?)<\/button>/g)) out.add(strip(m[1]));
   // A label's own words, not the options of the menu inside it.
@@ -211,7 +211,7 @@ function serve(dir) {
   return new Promise((resolve) => {
     const srv = http.createServer((req, res) => {
       const u = decodeURIComponent(req.url.split('?')[0]);
-      const p = path.join(dir, u === '/' ? 'index.html' : u);
+      const p = path.join(dir, u === '/' ? 'lab.html' : u);
       if (!p.startsWith(dir) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, { 'content-type': types[path.extname(p)] || 'application/octet-stream' });
       res.end(fs.readFileSync(p));

@@ -1,3 +1,7 @@
+> This guide covers **the lab page** — `lab.html`, the original FSK modem with
+> all its instruments. The product page at the site root is the OFDM engine;
+> the README covers it. The lab is where the signal processing is visible.
+
 # User guide
 
 This page moves a file from one laptop to another through the air. One laptop

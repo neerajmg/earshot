@@ -1,7 +1,7 @@
 # Acoustic FSK modem
 
-docs/GUIDE.md is the user guide. Its screenshots (docs/screenshots/) and the
-tables between `<!-- gen:... -->` markers are generated from index.html,
+docs/GUIDE.md is the guide to the lab page (lab.html), the original FSK instrument. Its screenshots (docs/screenshots/) and the
+tables between `<!-- gen:... -->` markers are generated from lab.html,
 app.js, diag.js, modem.js and dsp.js by `npm run guide`. `npm test` fails
 while the guide is behind those five files, and a PostToolUse hook in
 .claude/settings.json says so right after an edit.
