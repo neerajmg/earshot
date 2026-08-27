@@ -6,7 +6,7 @@
     "test": "node --test",
     "serve": "python3 -m http.server 8000",
     "eval": "node tools/eval.js --md eval-results.md",
-    "e2e": "node tools/browser-e2e.js robust --mic && node tools/browser-e2e.js fast --mic && node tools/browser-e2e.js robust --wav && node tools/browser-e2e.js fast --wav",
+    "e2e": "node tools/browser-e2e.js --ofdm && node tools/browser-e2e.js robust --mic && node tools/browser-e2e.js fast --wav",
     "guide": "node tools/make-guide.js",
     "guide:check": "node tools/make-guide.js --check",
     "listen": "node tools/listen.js"

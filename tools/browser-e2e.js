@@ -15,9 +15,12 @@ const { spawn } = require('child_process');
 const Modem = require('../modem.js');
 const DSP = require('../dsp.js');
 
+const Air = require('../air.js');
+
 const args = process.argv.slice(2);
 const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
 const presetName = args.find((a) => Modem.PRESETS[a]) || 'robust';
+const engine = args.includes('--ofdm') ? 'ofdm' : 'fsk';
 const mode = args.includes('--wav') ? 'wav' : 'mic';
 const seconds = Number(opt('--seconds', 120));
 const filePath = opt('--file', null);
@@ -37,27 +40,70 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const preset = Modem.PRESETS[presetName];
 const bytes = filePath ? new Uint8Array(fs.readFileSync(filePath)) : new Uint8Array(600).map((_, i) => (i * 131 + 17) & 0xFF);
-const sender = new Modem.Sender(bytes, filePath ? path.basename(filePath) : 'e2e.bin');
-const seq = sender.passSequence();
 const fsr = 48000;
-const parts = [new Float32Array(fsr)];
-for (const raw of seq) parts.push(DSP.modulateFrame(Modem.frameToBits(raw), preset, fsr));
-parts.push(new Float32Array(fsr));
-let n = 0; for (const x of parts) n += x.length;
-const all = new Float32Array(n); let off = 0; for (const x of parts) { all.set(x, off); off += x.length; }
 const wavPath = path.join(work, 'tx.wav');
-fs.writeFileSync(wavPath, Buffer.from(DSP.wavEncode(all, fsr)));
-console.log(`${presetName} via ${mode}: ${bytes.length} bytes, ${seq.length} frames, ${(n / fsr).toFixed(1)} s of audio`);
+let frameCount = 0;
 
-const url = 'file://' + encodeURI(path.join(root, 'index.html')) + '?preset=' + presetName + (mode === 'mic' ? '&listen' : '');
-const chromeArgs = ['--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=' + PORT, '--user-data-dir=' + path.join(work, 'profile'),
-  '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
-if (mode === 'mic') chromeArgs.push('--use-file-for-fake-audio-capture=' + wavPath);
-chromeArgs.push(url);
-const chrome = spawn(CHROME, chromeArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
-let errText = '';
-chrome.stderr.on('data', (d) => { errText += d.toString(); });
+async function buildWav() {
+  const parts = [new Float32Array(fsr)];
+  if (engine === 'ofdm') {
+    const prep = await Air.prepare(bytes, filePath ? path.basename(filePath) : 'e2e.bin');
+    const sender = new Air.Sender(prep, { session: 8 });
+    const blocks = Math.ceil(prep.payload.length / 256) || 1;
+    frameCount = Math.ceil(blocks / Air.DROPLETS_PER_FRAME) + 2;
+    for (let i = 0; i < frameCount; i++) parts.push(sender.nextFrame());
+  } else {
+    const sender = new Modem.Sender(bytes, filePath ? path.basename(filePath) : 'e2e.bin');
+    const seq = sender.passSequence();
+    frameCount = seq.length;
+    for (const raw of seq) parts.push(DSP.modulateFrame(Modem.frameToBits(raw), preset, fsr));
+  }
+  parts.push(new Float32Array(fsr));
+  let n = 0; for (const x of parts) n += x.length;
+  const all = new Float32Array(n); let off = 0; for (const x of parts) { all.set(x, off); off += x.length; }
+  fs.writeFileSync(wavPath, Buffer.from(DSP.wavEncode(all, fsr)));
+  console.log(`${engine === 'ofdm' ? 'ofdm' : presetName} via ${mode}: ${bytes.length} bytes, ${frameCount} frames, ${(n / fsr).toFixed(1)} s of audio`);
+}
+
+// The OFDM page needs a real origin: workers and worklets do not load from
+// file://. A throwaway static server does it.
+let server = null, port = 0;
+function serveRoot() {
+  const http = require('http');
+  return new Promise((resolve) => {
+    server = http.createServer((req, res) => {
+      const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html');
+      try {
+        const data = fs.readFileSync(p.endsWith('/') ? p + 'index.html' : p);
+        const type = p.endsWith('.js') ? 'text/javascript' : p.endsWith('.html') ? 'text/html' : 'application/octet-stream';
+        res.writeHead(200, { 'content-type': type });
+        res.end(data);
+      } catch (e) { res.writeHead(404); res.end(); }
+    });
+    server.listen(0, '127.0.0.1', () => { port = server.address().port; resolve(); });
+  });
+}
+
+const url = engine === 'ofdm'
+  ? null                                             // set after the server starts
+  : 'file://' + encodeURI(path.join(root, 'lab.html')) + '?preset=' + presetName + (mode === 'mic' ? '&listen' : '');
+let chrome = null, errText = '';
+async function launchChrome() {
+  await buildWav();
+  let target = url;
+  if (engine === 'ofdm') {
+    await serveRoot();
+    target = `http://127.0.0.1:${port}/index.html?listen`;
+  }
+  const chromeArgs = ['--headless=new', '--disable-gpu', '--no-sandbox', '--remote-debugging-port=' + PORT, '--user-data-dir=' + path.join(work, 'profile'),
+    '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'];
+  if (mode === 'mic') chromeArgs.push('--use-file-for-fake-audio-capture=' + wavPath);
+  chromeArgs.push(target);
+  chrome = spawn(CHROME, chromeArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+  chrome.stderr.on('data', (d) => { errText += d.toString(); });
+}
 const finish = (code) => {
+  try { if (server) server.close(); } catch (e) { /* gone */ }
   try { chrome.kill(); } catch (e) { /* gone */ }
   // Chrome keeps writing its profile for a moment after the kill; try a few times, then give up.
   let tries = 0;
@@ -66,6 +112,7 @@ const finish = (code) => {
 };
 
 (async () => {
+  await launchChrome();
   let page = null;
   for (let i = 0; i < 100 && !page; i++) {
     try { const t = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json(); page = t.find((x) => x.type === 'page'); } catch (e) { /* not up yet */ }
@@ -94,8 +141,11 @@ const finish = (code) => {
 
   const deadline = Date.now() + seconds * 1000;
   let state = null;
+  const expr = engine === 'ofdm'
+    ? 'JSON.stringify({title: document.title, mic: document.getElementById("rxStatus").textContent, seen: 0, ok: 0, drops: earshotDebug.rx.drops, failures: 0, done: !!earshotDebug.fileBytes})'
+    : 'JSON.stringify({title: document.title, mic: document.getElementById("micInfo").textContent, seen: modemDebug.rx.framesSeen, ok: modemDebug.rx.framesOk, drops: modemDebug.rx.drops, failures: modemDebug.rx.failures.length, done: !!modemDebug.rx.result})';
   while (Date.now() < deadline) {
-    state = JSON.parse(await evalJs('JSON.stringify({title: document.title, mic: document.getElementById("micInfo").textContent, seen: modemDebug.rx.framesSeen, ok: modemDebug.rx.framesOk, drops: modemDebug.rx.drops, failures: modemDebug.rx.failures.length, done: !!modemDebug.rx.result})'));
+    try { state = JSON.parse(await evalJs(expr)); } catch (e) { await sleep(500); continue; }
     if (state.done) break;
     await sleep(500);
   }
@@ -107,7 +157,9 @@ const finish = (code) => {
     consoleErrs.forEach((l) => console.log('console: ' + l));
     finish(1);
   }
-  const got = new Uint8Array(JSON.parse(await evalJs('JSON.stringify(Array.from(modemDebug.rx.result.bytes))')));
+  const got = new Uint8Array(JSON.parse(await evalJs(engine === 'ofdm'
+    ? 'JSON.stringify(Array.from(earshotDebug.fileBytes))'
+    : 'JSON.stringify(Array.from(modemDebug.rx.result.bytes))')));
   let same = got.length === bytes.length;
   for (let i = 0; same && i < got.length; i++) if (got[i] !== bytes[i]) same = false;
   console.log(`${mode === 'mic' ? state.mic : 'wav input'}`);
