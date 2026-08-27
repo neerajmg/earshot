@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>earshot device checks</title>
+<style>
+  body { margin: 0; padding: 16px; font: 16px/1.5 -apple-system, system-ui, sans-serif; background: #111; color: #ddd; }
+  h1 { font-size: 18px; } h2 { font-size: 16px; margin: 20px 0 6px; }
+  button { background: #245; color: #ddd; border: 1px solid #4a8; border-radius: 6px; padding: 10px 14px; font-size: 15px; }
+  pre { background: #000; padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
+  canvas { width: 100%; background: #000; border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>earshot device checks</h1>
+<p>Three quick measurements this device's report depends on. Tap each button and
+allow the microphone. Results appear below the button; screenshot the page when done.</p>
+
+<h2>1. Can this device run audio at 48000 Hz?</h2>
+<button id="rate">Check sample rates</button>
+<pre id="rateOut">not run</pre>
+
+<h2>2. Does the microphone hear the whole band? (plays a 2 s sweep out loud)</h2>
+<button id="band">Play and record sweep</button>
+<pre id="bandOut">not run</pre>
+<canvas id="bandCanvas" height="120"></canvas>
+
+<h2>3. Raw capture info</h2>
+<button id="mic">Inspect microphone</button>
+<pre id="micOut">not run</pre>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MIC = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } };
+
+$('rate').onclick = async () => {
+  const out = [];
+  out.push('userAgent: ' + navigator.userAgent);
+  for (const want of [48000, 44100]) {
+    try {
+      const c = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: want });
+      await c.resume();
+      out.push('requested ' + want + ' -> got ' + c.sampleRate + ' (' + c.state + ')');
+      await c.close();
+    } catch (e) { out.push('requested ' + want + ' -> threw: ' + e.message); }
+  }
+  const d = new (window.AudioContext || window.webkitAudioContext)();
+  out.push('default rate: ' + d.sampleRate);
+  await d.close();
+  $('rateOut').textContent = out.join('\n');
+};
+
+$('mic').onclick = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia(MIC);
+    const t = stream.getAudioTracks()[0];
+    $('micOut').textContent = 'label: ' + t.label + '\nsettings: ' + JSON.stringify(t.getSettings(), null, 1);
+    stream.getTracks().forEach((x) => x.stop());
+  } catch (e) { $('micOut').textContent = 'failed: ' + e.message; }
+};
+
+// Sweep 500 Hz to 10 kHz out of the speaker, record own mic, plot received
+// spectrum. On a single device this measures playback+capture band jointly,
+// which is exactly what an earshot receiver on this device would live with.
+$('band').onclick = async () => {
+  const el = $('bandOut');
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    await ctx.resume();
+    const fs = ctx.sampleRate;
+    const stream = await navigator.mediaDevices.getUserMedia(MIC);
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+    const chunks = [];
+    proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+
+    const dur = 2, n = Math.round(dur * fs), buf = ctx.createBuffer(1, n, fs);
+    const ch = buf.getChannelData(0);
+    const f0 = 500, f1 = 10000;
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const f = f0 * Math.pow(f1 / f0, i / n);      // log sweep
+      ph += 2 * Math.PI * f / fs;
+      ch[i] = 0.5 * Math.sin(ph) * Math.min(1, i / 480, (n - i) / 480);
+    }
+    const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination);
+    el.textContent = 'playing ' + dur + ' s sweep at ' + fs + ' Hz...';
+    s.start();
+    await new Promise((r) => setTimeout(r, (dur + 0.7) * 1000));
+    proc.onaudioprocess = null; proc.disconnect(); src.disconnect(); mute.disconnect();
+    stream.getTracks().forEach((x) => x.stop());
+
+    let total = 0; for (const c of chunks) total += c.length;
+    const x = new Float32Array(total); let off = 0;
+    for (const c of chunks) { x.set(c, off); off += c.length; }
+    // Goertzel at 250 Hz steps
+    const bands = [];
+    for (let f = 500; f <= 10000; f += 250) {
+      const w = 2 * Math.PI * f / fs, coeff = 2 * Math.cos(w);
+      let s0 = 0, s1 = 0, s2 = 0;
+      for (let i = 0; i < x.length; i++) { s0 = x[i] + coeff * s1 - s2; s2 = s1; s1 = s0; }
+      bands.push([f, 10 * Math.log10((s1 * s1 + s2 * s2 - coeff * s1 * s2) / x.length + 1e-12)]);
+    }
+    const peak = Math.max(...bands.map((b) => b[1]));
+    el.textContent = 'received level relative to peak, by frequency:\n' +
+      bands.map(([f, db]) => String(f).padStart(5) + ' Hz  ' + (db - peak).toFixed(1).padStart(7) + ' dB').join('\n');
+    const cv = $('bandCanvas'); cv.width = cv.clientWidth;
+    const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = '#4cf';
+    bands.forEach(([f, db], i) => {
+      const h = Math.max(2, (60 + (db - peak)) / 60 * cv.height);
+      g.fillRect(i * cv.width / bands.length, cv.height - h, cv.width / bands.length - 1, h);
+    });
+    await ctx.close();
+  } catch (e) { el.textContent = 'failed: ' + e.message; }
+};
+</script>
+</body>
+</html>

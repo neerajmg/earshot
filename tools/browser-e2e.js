@@ -21,7 +21,15 @@ const presetName = args.find((a) => Modem.PRESETS[a]) || 'robust';
 const mode = args.includes('--wav') ? 'wav' : 'mic';
 const seconds = Number(opt('--seconds', 120));
 const filePath = opt('--file', null);
-const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+function findChrome() {
+  const { execSync } = require('child_process');
+  if (process.env.CHROME) return process.env.CHROME;
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    try { return execSync('command -v ' + name, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch (e) { /* keep looking */ }
+  }
+  return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+}
+const CHROME = findChrome();
 const PORT = 9333 + Math.floor(Math.random() * 100);
 const root = path.resolve(__dirname, '..');
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'modem-e2e-'));

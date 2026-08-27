@@ -29,7 +29,15 @@ const SHOTS = path.join(root, 'docs', 'screenshots');
 const MANIFEST = path.join(SHOTS, 'manifest.json');
 // Anything a user can see or hear comes from these five files.
 const PRODUCT = ['index.html', 'app.js', 'diag.js', 'modem.js', 'dsp.js'];
-const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+function findChrome() {
+  const { execSync } = require('child_process');
+  if (process.env.CHROME) return process.env.CHROME;
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+    try { return execSync('command -v ' + name, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch (e) { /* keep looking */ }
+  }
+  return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+}
+const CHROME = findChrome();
 const PRESET = 'robust';
 // What the fake microphone hears: the transfer at about -36 dBFS with white noise 40 dB under it,
 // roughly a laptop half a metre away in a quiet room. Full scale with no noise reads SNR 155 dB

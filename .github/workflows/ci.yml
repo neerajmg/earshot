@@ -1,0 +1,26 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+      - name: tests
+        run: npm test
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
+      - name: channel evaluation
+        run: node tools/eval.js
+      - name: browser end-to-end
+        run: node tools/browser-e2e.js robust --wav && node tools/browser-e2e.js fast --wav
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
