@@ -1,0 +1,30 @@
+{
+  "name": "earshot",
+  "version": "0.1.0",
+  "description": "Send files between devices through the air with sound. A browser acoustic modem: no install, no network, no pairing.",
+  "scripts": {
+    "test": "node --test",
+    "serve": "python3 -m http.server 8000",
+    "eval": "node tools/eval.js --md eval-results.md",
+    "e2e": "node tools/browser-e2e.js robust --mic && node tools/browser-e2e.js fast --mic && node tools/browser-e2e.js robust --wav && node tools/browser-e2e.js fast --wav",
+    "guide": "node tools/make-guide.js",
+    "guide:check": "node tools/make-guide.js --check",
+    "listen": "node tools/listen.js"
+  },
+  "license": "MIT",
+  "author": "Neeraj MG",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/neerajmg/earshot.git"
+  },
+  "homepage": "https://neerajmg.github.io/earshot/",
+  "keywords": [
+    "acoustic",
+    "modem",
+    "ofdm",
+    "fsk",
+    "file-transfer",
+    "web-audio",
+    "dsp"
+  ]
+}

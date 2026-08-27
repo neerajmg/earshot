@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+*.wav
+!test/fixtures/*.wav
+find-tones-recording.wav
+site/

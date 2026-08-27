@@ -1,0 +1,36 @@
+{
+  "sourceHash": "4e725a02e2deec0c",
+  "sources": [
+    "index.html",
+    "app.js",
+    "diag.js",
+    "modem.js",
+    "dsp.js"
+  ],
+  "files": [
+    "page.png",
+    "send-ready.png",
+    "loopback.png",
+    "receive-noisy.png",
+    "receive-listening.png",
+    "stats.png",
+    "spectrogram.png",
+    "decision.png",
+    "receive-done.png"
+  ],
+  "preset": "robust",
+  "viewport": {
+    "width": 1280,
+    "height": 1120
+  },
+  "sample": {
+    "name": "notes.txt",
+    "bytes": 453,
+    "frames": 17
+  },
+  "noisy": {
+    "snrDb": -11,
+    "framesOk": 13,
+    "frames": 17
+  }
+}

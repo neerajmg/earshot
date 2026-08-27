@@ -1,0 +1,16 @@
+# Acoustic FSK modem
+
+Send a file from one laptop to another using only the speaker on one side and
+the microphone on the other. Everything runs in the browser from plain files:
+no build step, no dependencies, nothing to install. Node is used only to run
+the tests.
+
+You can hear the whole thing: a 2-FSK signal at 300 baud sounds like an old
+modem handshake that never ends. The receiver page shows a spectrogram, the
+decision variable the slicer works on, and a log of every frame.
+
+## Quick start
+
+On both laptops, copy this folder over (AirDrop is fine) and serve it:
+
+    cd "Modem file transfer
