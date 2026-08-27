@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>earshot loudness check</title>
+<style>
+  body { margin: 0; padding: 16px; font: 16px/1.5 -apple-system, system-ui, sans-serif; background: #111; color: #ddd; }
+  h1 { font-size: 18px; }
+  button { background: #245; color: #ddd; border: 1px solid #4a8; border-radius: 6px; padding: 10px 14px; font-size: 15px; }
+  pre { background: #000; padding: 10px; border-radius: 6px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>earshot loudness check (PAPR)</h1>
+<p>OFDM is peaky, so at the same speaker limit it radiates less average power
+than the old FSK tones. The design budgets about 5 dB for that. This plays a
+2 s OFDM burst and a 2 s FSK burst at the same peak level, listens to both
+through the microphone, and reports the measured difference.</p>
+<button id="go">Play both and measure</button>
+<pre id="out">not run</pre>
+<script src="../modem.js"></script>
+<script src="../dsp.js"></script>
+<script src="../fft.js"></script>
+<script src="../ofdm.js"></script>
+<script>
+const out = document.getElementById('out');
+const bandRms = (x, fs, lo, hi) => {
+  // Goertzel comb across the band, 150 Hz steps
+  let p = 0, n = 0;
+  for (let f = lo; f <= hi; f += 150) {
+    const w = 2 * Math.PI * f / fs, coeff = 2 * Math.cos(w);
+    let s0 = 0, s1 = 0, s2 = 0;
+    for (let i = 0; i < x.length; i++) { s0 = x[i] + coeff * s1 - s2; s2 = s1; s1 = s0; }
+    p += (s1 * s1 + s2 * s2 - coeff * s1 * s2) / (x.length * x.length) * 4;
+    n++;
+  }
+  return p;
+};
+document.getElementById('go').onclick = async () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    await ctx.resume();
+    const fs = ctx.sampleRate;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+    const chunks = [];
+    proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+
+    // equal peak 0.8 for both
+    const r = () => Math.random();
+    const QPSK = [[1,1],[1,-1],[-1,1],[-1,-1]].map(([a,b]) => [a/Math.SQRT2, b/Math.SQRT2]);
+    const symbols = [];
+    for (let s = 0; s < 72; s++) symbols.push(Array.from({length: 116}, () => QPSK[(Math.random()*4)|0]));
+    const ofdm = Ofdm.txBody(symbols, 0.8);
+    const raw = Modem.buildFrame({ kind: 1, session: 1, seq: 0, len: 32, payload: new Uint8Array(32) });
+    let fsk = DSP.modulateFrame(Modem.frameToBits(raw, 0), Modem.PRESETS.robust, fs, { amplitude: 1, gap: false });
+    let pk = 0; for (const v of fsk) pk = Math.max(pk, Math.abs(v));
+    fsk = fsk.map((v) => v * 0.8 / pk);
+
+    const play = (samples, when) => {
+      const b = ctx.createBuffer(1, samples.length, fs);
+      b.getChannelData(0).set(samples);
+      const s = ctx.createBufferSource(); s.buffer = b; s.connect(ctx.destination); s.start(when);
+      return samples.length / fs;
+    };
+    out.textContent = 'playing OFDM then FSK...';
+    const t0 = ctx.currentTime + 0.3;
+    const d1 = play(ofdm.subarray(0, 2 * fs), t0);
+    play(fsk.subarray(0, 2 * fs), t0 + d1 + 0.7);
+    await new Promise((res) => setTimeout(res, 5500));
+    proc.onaudioprocess = null; proc.disconnect(); src.disconnect(); mute.disconnect();
+    stream.getTracks().forEach((t) => t.stop());
+    await ctx.close();
+
+    let n = 0; for (const c of chunks) n += c.length;
+    const x = new Float32Array(n); let off = 0;
+    for (const c of chunks) { x.set(c, off); off += c.length; }
+    // locate the two bursts by energy: first 2 s window with high rms, then the next
+    const win = Math.round(0.25 * fs);
+    const env = [];
+    for (let i = 0; i + win <= x.length; i += win) { let p = 0; for (let j = i; j < i + win; j++) p += x[j]*x[j]; env.push(Math.sqrt(p/win)); }
+    const thr = Math.max(...env) * 0.25;
+    let aStart = env.findIndex((v) => v > thr);
+    let aEnd = aStart; while (aEnd < env.length && env[aEnd] > thr) aEnd++;
+    let bStart = aEnd; while (bStart < env.length && env[bStart] <= thr) bStart++;
+    let bEnd = bStart; while (bEnd < env.length && env[bEnd] > thr) bEnd++;
+    if (aStart < 0 || bStart >= env.length) { out.textContent = 'could not find both bursts; louder?'; return; }
+    const cut = (s, e) => x.subarray((s + 1) * win, Math.max((s + 2) * win, (e - 1) * win));
+    const oSeg = cut(aStart, aEnd), fSeg = cut(bStart, bEnd);
+    const oP = bandRms(oSeg, fs, 1500, 7500);
+    const fP = bandRms(fSeg, fs, 1400, 2200);
+    const delta = 10 * Math.log10(oP / fP);
+    out.textContent =
+      'received in-band power, OFDM minus FSK: ' + delta.toFixed(1) + ' dB\n' +
+      '(design budget: about -5 dB. Much lower than -8 means clipping is not\n' +
+      'buying back what it should; near 0 means the speaker limits differently.)';
+  } catch (e) { out.textContent = 'failed: ' + e.message; }
+};
+</script>
+</body>
+</html>
