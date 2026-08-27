@@ -68,7 +68,7 @@
 
   // Real Worker glue.
   if (typeof importScripts === 'function') {
-    importScripts('modem.js', 'fft.js', 'chirp.js', 'ofdm.js', 'fec.js', 'fountain.js', 'air.js');
+    importScripts('modem.js', 'fft.js', 'chirp.js', 'fec.js', 'ofdm.js', 'fountain.js', 'air.js');
     const handle = createWorkerCore((m, transfer) => postMessage(m, transfer || []));
     onmessage = (e) => { handle(e.data); };
   }

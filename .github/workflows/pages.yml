@@ -24,7 +24,7 @@ jobs:
       - name: stage the static site
         run: |
           mkdir -p site
-          cp index.html modem.js dsp.js diag.js app.js fft.js chirp.js ofdm.js fec.js fountain.js air.js worker.js capture-worklet.js site/
+          cp index.html lab.html earshot.js modem.js dsp.js diag.js app.js fft.js chirp.js ofdm.js fec.js fountain.js air.js worker.js capture-worklet.js site/
           cp -r checks site/checks
           touch site/.nojekyll
       - uses: actions/upload-pages-artifact@v3
