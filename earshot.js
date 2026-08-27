@@ -93,12 +93,14 @@
   ui.drop.addEventListener('dragleave', () => ui.drop.classList.remove('hover'));
   ui.drop.addEventListener('drop', (e) => { e.preventDefault(); ui.drop.classList.remove('hover'); pickFile(e.dataTransfer.files[0]); });
 
-  async function startSend() {
+  // The passphrase field belongs to the file group; a typed message is sent
+  // plain, which is what its placeholder says.
+  async function startSend(opts) {
     const c = await ensureCtx();
     ui.send.disabled = true;
     ui.txStatus.textContent = 'preparing…';
     const bytes = new Uint8Array(await tx.file.arrayBuffer());
-    const pass = ui.txPass.value.trim();
+    const pass = (opts && opts.plain) ? '' : ui.txPass.value.trim();
     const prep = await Air.prepare(bytes, tx.file.name, pass ? { passphrase: pass } : undefined);
     tx.sender = new Air.Sender(prep);
     const blocks = Math.ceil(prep.payload.length / Fountain.BLOCK) || 1;
@@ -159,7 +161,7 @@
     tx.file = new File([new TextEncoder().encode(text)], 'message.txt', { type: 'text/plain' });
     ui.dropText.innerHTML = '💬 message.txt<br><span class="hint">from the text box</span>';
     ui.fileInfo.textContent = `${fmtBytes(tx.file.size)} — ${framesFor(tx.file.size)} frames, about ${fmtTime(secondsFor(tx.file.size))} of sound.`;
-    startSend().catch((e) => { ui.txStatus.textContent = e.message; ui.send.disabled = false; });
+    startSend({ plain: true }).catch((e) => { ui.txStatus.textContent = e.message; ui.send.disabled = false; });
   });
 
   // --------------------------------------------------------------- receive

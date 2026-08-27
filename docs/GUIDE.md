@@ -98,8 +98,8 @@ If the sender set a passphrase, the result box asks for it before
 
    ![Too big](screenshots/product/too-big.png)
 
-2. Optionally type a passphrase in the field at the bottom of the card,
-   under **Send text**; it applies to files and messages alike. See
+2. Optionally type a passphrase in the field just above **Start
+   sending**. It protects the file; typed messages go out plain. See
    [Passphrase](#passphrase).
 3. Wait until the other device says it is listening, then press
    **Start sending**. The status says `preparing…` for a moment
@@ -118,8 +118,9 @@ If the sender set a passphrase, the result box asks for it before
 6. To send a message instead of a file, type it in the box under the file
    area and press **Send text**. It travels as a small file called
    `message.txt` and the receiver shows it on screen as soon as it lands,
-   with the same **Save file** button underneath. A passphrase applies to
-   messages too.
+   with the same **Save file** button underneath. Messages are sent without
+   a passphrase - anyone in earshot can read one - so put anything private
+   in a file instead.
 
    ![A message being sent](screenshots/product/send-text.png)
 
@@ -240,10 +241,10 @@ thing to attach to a bug report; see [LAB.md](LAB.md).
 ## Every control
 
 Send card, top to bottom: **Choose a file** (or drop one on the box),
-**Use the sample file** beside the size note, **Start sending**, which
-becomes **Stop** while sending; then an "or send a message" divider, the
-message box and **Send text**; then the passphrase field, the progress bar,
-the status line, and **Speed and limits** folded underneath.
+**Use the sample file** beside the size note, the passphrase field,
+**Start sending**, which becomes **Stop** while sending; then an "or send a
+message" divider, the message box and **Send text**; then the progress
+bar, the status line, and **Speed and limits** folded underneath.
 
 Receive card: **Listen**, which becomes **Stop listening** while the
 microphone is open, the progress bar and status line, and the result box

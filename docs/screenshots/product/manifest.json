@@ -1,7 +1,7 @@
 {
   "target": "product",
   "page": "index.html",
-  "sourceHash": "37fb741e0fd5c61e",
+  "sourceHash": "bef91338ba1904d1",
   "sources": [
     "index.html",
     "earshot.js",
@@ -53,8 +53,8 @@
   },
   "noisy": {
     "snrDb": -2,
-    "droplets": 23,
-    "dropletCrcFail": 22,
+    "droplets": 17,
+    "dropletCrcFail": 28,
     "complete": true
   }
 }
