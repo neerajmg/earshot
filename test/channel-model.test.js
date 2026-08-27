@@ -69,9 +69,11 @@ test('sfo stretches time by exactly the ppm asked for', () => {
   const y = ch.sfo(x, FS, 200);
   const expected = Math.floor(x.length / (1 + 200e-6));
   assert.ok(Math.abs(y.length - expected) <= 1, `${y.length} vs ${expected}`);
-  // the tone must come out at 1000.2 Hz: phase drift across 0.9 s of
-  // interior distinguishes that cleanly from 1000.0
-  const p0 = powerAt(y, FS, 1000.2, 2000, y.length - 2000);
-  const p1 = powerAt(y, FS, 1000.0, 2000, y.length - 2000);
-  assert.ok(db(p0) - db(p1) > 3, 'offset tone not dominant: ' + (db(p0) - db(p1)).toFixed(1) + ' dB');
+  // A 0.2 Hz shift is not resolvable over a 0.9 s window (0.5 dB of
+  // coherence loss), so the frequency check uses 5000 ppm: 1000 Hz must
+  // come out at 1005 Hz, and 4.5 cycles of drift separates that cleanly.
+  const z = ch.sfo(tone(FS, 1000, 0.5), FS, 5000);
+  const p0 = powerAt(z, FS, 1005, 2000, z.length - 2000);
+  const p1 = powerAt(z, FS, 1000, 2000, z.length - 2000);
+  assert.ok(db(p0) - db(p1) > 10, 'offset tone not dominant: ' + (db(p0) - db(p1)).toFixed(1) + ' dB');
 });
