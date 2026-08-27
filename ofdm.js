@@ -16,6 +16,8 @@
 
   const FFT = root.FFT || (typeof require !== 'undefined' ? require('./fft.js') : null);
   if (!FFT) throw new Error('ofdm.js needs fft.js');
+  const Fec = root.Fec || (typeof require !== 'undefined' ? require('./fec.js') : null);
+  const Modem = root.Modem || (typeof require !== 'undefined' ? require('./modem.js') : null);
 
   const TWO_PI = 2 * Math.PI;
 
@@ -148,17 +150,46 @@
 
     // channel estimate from the CE symbol
     const ce = binsAt(start + win);
-    const H = new Map();
+    const Hraw = new Map();
     P.bins.forEach((b, n) => {
       const y = ce.get(b), z = ZC[n];
       // H = Y / Z ; |Z| = 1 so division is multiply by conjugate
-      H.set(b, [y[0] * z[0] + y[1] * z[1], y[1] * z[0] - y[0] * z[1]]);
+      Hraw.set(b, [y[0] * z[0] + y[1] * z[1], y[1] * z[0] - y[0] * z[1]]);
+    });
+    // Smooth across neighbouring bins: the channel is coherent over several
+    // bins in any room the cyclic prefix can handle, and a [1,2,1] window
+    // halves the estimation noise without filling in comb notches (a wider
+    // window was tried and broke the notch-visibility gate) - which is what keeps the signalling
+    // field decodable at the bottom of the link budget. The FFT window
+    // offset imprints a known phase ramp of 2*pi*(win-cp)/N per bin
+    // (measured: -35.9 deg/bin), which would wreck a naive average, so:
+    // de-ramp, average, re-ramp.
+    const ramp = TWO_PI * (win - P.cp) / P.N;
+    const H = new Map();
+    P.bins.forEach((b) => {
+      let re = 0, im = 0, wsum = 0;
+      for (const [db, w] of [[-1, 1], [0, 2], [1, 1]]) {
+        const h = Hraw.get(b + db);
+        if (!h) continue;
+        const th = -ramp * db;                        // rotate neighbour onto b
+        const c = Math.cos(th), sn = Math.sin(th);
+        re += w * (h[0] * c - h[1] * sn);
+        im += w * (h[0] * sn + h[1] * c);
+        wsum += w;
+      }
+      H.set(b, [re / wsum, im / wsum]);
     });
     // the CE window offset (win) imprints a phase ramp on H itself; that is
     // fine - the same ramp sits on every data symbol and divides out.
 
     const symbols = [];
     let noisePow = 0, noiseCount = 0;
+    // Slope (timing drift) and gain change slowly by physics - drift is ppm
+    // of a symbol per symbol - while their per-symbol estimates from eight
+    // pilots are noisy exactly when the link is weakest. The slope grows as
+    // a ramp under clock offset, so it gets a g-h tracker (no steady-state
+    // lag on ramps); gain gets a plain EMA; common phase stays per-symbol.
+    let slopeEst = 0, slopeRate = 0, gainEma = 1;
     for (let s = 0; s < nSymbols; s++) {
       const off = start + (s + 1) * P.symbolLen + win;
       const Y = binsAt(off);
@@ -185,7 +216,15 @@
         num += (b - mid) * d;
         den += (b - mid) * (b - mid);
       }
-      const slope = den ? num / den : 0;             // rad per bin
+      const slopeRaw = den ? num / den : 0;          // rad per bin
+      if (s === 0) { slopeEst = slopeRaw; slopeRate = 0; }
+      else {
+        const pred = slopeEst + slopeRate;
+        const resid = slopeRaw - pred;
+        slopeEst = pred + 0.4 * resid;
+        slopeRate += 0.1 * resid;
+      }
+      const slope = slopeEst;
 
       // common gain from pilot magnitude vs channel magnitude
       let gNum = 0, gDen = 0;
@@ -194,7 +233,9 @@
         gNum += Math.hypot(y[0], y[1]);
         gDen += Math.hypot(h[0], h[1]);
       });
-      const gain = gDen > 1e-12 ? gNum / gDen : 1;
+      const gainRaw = gDen > 1e-12 ? gNum / gDen : 1;
+      gainEma = s === 0 ? gainRaw : 0.7 * gainEma + 0.3 * gainRaw;
+      const gain = gainEma;
 
       // noise from the null bins
       for (const b of P.nulls) {
@@ -221,7 +262,91 @@
     return { symbols, H, noisePow: noiseCount ? noisePow / noiseCount : 0 };
   }
 
-  const Ofdm = { P, synthesize, ceValues, dataValues, txBody, rxBody, ZC, PILOT_VAL };
+  // ------------------------------------------------------- signalling
+
+  // The first two data symbols of every frame announce what follows, so one
+  // receiver handles every profile with nothing configured. They are
+  // ordinary symbols to rxBody; the announcement rides as BPSK on the data
+  // bins at or below bin 117 (1500-5500 Hz - chosen so a microphone that
+  // cuts off near 4-5 kHz still acquires), while the higher data bins carry
+  // fixed filler. 44 bits, convolutionally coded and part-repeated to fill
+  // 156 lanes, CRC-16 inside.
+  P.sigBins = P.data.filter((b) => b <= 117);        // 78 per symbol
+  P.sigSymbols = 2;
+  const SIG_LANES = P.sigBins.length * P.sigSymbols; // 156
+  const SIG_INFO = 44;
+  const SIG_CODED = 2 * (SIG_INFO + 6);              // 100
+  const FILLER = P.data.map((b, i) => {
+    const ph = TWO_PI * ((i * 5 + 1) % 8) / 8;
+    return [Math.cos(ph), Math.sin(ph)];
+  });
+
+  // fields: {profile 0..15, cp 0..1, band 0..3, symCount 0..1023,
+  //          session 0..255, flags 0..7}
+  function sigPack(f) {
+    const bits = new Uint8Array(SIG_INFO);
+    let i = 0;
+    const put = (v, n) => { for (let b = n - 1; b >= 0; b--) bits[i++] = (v >> b) & 1; };
+    put(f.profile & 15, 4);
+    put(f.cp & 1, 1);
+    put(f.band & 3, 2);
+    put(f.symCount & 1023, 10);
+    put(f.session & 255, 8);
+    put(f.flags & 7, 3);
+    // crc over the 28 payload bits, packed into 4 bytes (last nibble zero)
+    const bytes = new Uint8Array(4);
+    for (let b = 0; b < 28; b++) if (bits[b]) bytes[b >> 3] |= 0x80 >> (b & 7);
+    const crc = Modem.crc16(bytes);
+    put(crc, 16);
+    return bits;
+  }
+
+  function sigUnpack(bits) {
+    let i = 0;
+    const get = (n) => { let v = 0; for (let b = 0; b < n; b++) v = (v << 1) | bits[i++]; return v; };
+    const f = { profile: get(4), cp: get(1), band: get(2), symCount: get(10), session: get(8), flags: get(3) };
+    const crc = get(16);
+    const bytes = new Uint8Array(4);
+    for (let b = 0; b < 28; b++) if (bits[b]) bytes[b >> 3] |= 0x80 >> (b & 7);
+    f.crcOk = crc === Modem.crc16(bytes);
+    return f;
+  }
+
+  // Two symbol maps (116 QPSK entries each) announcing `fields`.
+  function sigEncode(fields) {
+    const coded = Fec.encode(sigPack(fields));        // 100 bits
+    const symbols = [];
+    for (let s = 0; s < P.sigSymbols; s++) {
+      const sym = FILLER.map((v) => [v[0], v[1]]);    // filler everywhere first
+      for (let k = 0; k < P.sigBins.length; k++) {
+        const lane = s * P.sigBins.length + k;
+        const bit = coded[lane % SIG_CODED];
+        const di = P.data.indexOf(P.sigBins[k]);
+        sym[di] = [bit ? -1 : 1, 0];                  // BPSK on the real axis
+      }
+      symbols.push(sym);
+    }
+    return symbols;
+  }
+
+  // rxSymbols: the first two entries of rxBody(...).symbols. noise: the
+  // rxBody noisePow. Soft-combines the repeated lanes, Viterbi-decodes,
+  // checks the CRC.
+  function sigDecode(rxSymbols, noisePow) {
+    const llrs = new Float64Array(SIG_CODED);
+    for (let s = 0; s < P.sigSymbols; s++) {
+      for (let k = 0; k < P.sigBins.length; k++) {
+        const lane = s * P.sigBins.length + k;
+        const di = P.data.indexOf(P.sigBins[k]);
+        const [zr, , hh] = rxSymbols[s].eq[di];
+        const w = hh / (noisePow + 1e-20);
+        llrs[lane % SIG_CODED] += zr * Math.min(w, 1e4);
+      }
+    }
+    return sigUnpack(Fec.decode(llrs, SIG_INFO));
+  }
+
+  const Ofdm = { P, synthesize, ceValues, dataValues, txBody, rxBody, ZC, PILOT_VAL, FILLER, sigPack, sigUnpack, sigEncode, sigDecode };
   root.Ofdm = Ofdm;
   if (typeof module !== 'undefined' && module.exports) module.exports = Ofdm;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
