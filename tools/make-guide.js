@@ -116,7 +116,7 @@ function productBlocks() {
   rows.push(`One frame is ${frameSec.toFixed(2)} s of sound and carries ${perFrame} bytes of the file, ${Math.round(perFrame / frameSec)} bytes per second. The table is for a file that does not compress and a transfer that loses nothing; text usually compresses two to three times, and every lost frame adds one more.`);
   const timing = rows.join('\n');
 
-  const cap = Number(grab('earshot.js', /f\.size > (\d+) \* 1048576/, 'the file size cap')[1]);
+  const cap = Number(grab('earshot.js', /(?:MAX_BYTES = |f\.size > )(\d+) \* 1048576/, 'the file size cap')[1]);
   const nameBytes = Number(grab('air.js', /encode\(m\.name \|\| 'file'\)\.subarray\(0, (\d+)\)/, 'the file name limit')[1]);
   const gzipGain = Number(grab('air.js', /z\.length < bytes\.length \* ([\d.]+)/, 'the compression rule')[1]);
   const iters = Number(grab('air.js', /PBKDF2_ITERS = (\d+)/, 'PBKDF2_ITERS')[1]);

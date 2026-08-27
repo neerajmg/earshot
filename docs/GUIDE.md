@@ -62,22 +62,24 @@ still gets it.
 1. Press **Listen** and allow the microphone when the browser asks. The
    button turns into **Stop listening** and the status line says
    `listening… start the sender on the other device.`
+
+   ![Listening](screenshots/product/listening.png)
+
 2. Keep the page in front and the device still. If you switch away, the
    browser may starve the audio; the log under **Advanced** says
    `page hidden - audio may be throttled` when that happens.
 3. As frames arrive, a progress bar appears with the file's name and how
    much of it is in. The size shown there is the size on the air, after
    compression, so it is often smaller than the file.
+
+   ![A transfer part way through](screenshots/product/receiving.png)
+
 4. When the file is complete, the status says `received.`, the result box
    names the file, and listening stops by itself.
 5. Press **Save file**. On a phone that offers a share sheet, that is what
    opens; otherwise the file downloads.
 
-![Listening](screenshots/product/listening.png)
-
-![A transfer part way through](screenshots/product/receiving.png)
-
-![Received and ready to save](screenshots/product/received.png)
+   ![Received and ready to save](screenshots/product/received.png)
 
 If the sender set a passphrase, the result box asks for it before
 **Save file** appears; see [Passphrase](#passphrase).
@@ -86,7 +88,14 @@ If the sender set a passphrase, the result box asks for it before
 
 1. **Choose a file**, or drop one on the box. Up to 2 MB; anything bigger
    is refused with a note saying so. The line under the box says how big
-   the file is and roughly how long it will take.
+   the file is, how many frames that is, and roughly how long it will take.
+   No file handy? **Use the sample file** loads a short built-in text so
+   you can try a transfer in about ten seconds.
+
+   ![A file chosen](screenshots/product/send-picked.png)
+
+   ![Too big](screenshots/product/too-big.png)
+
 2. Optionally type a passphrase in the box under it. See
    [Passphrase](#passphrase).
 3. Wait until the other device says it is listening, then press
@@ -101,11 +110,20 @@ If the sender set a passphrase, the result box asks for it before
    **Stop**. Past the estimate the status adds
    `keep going until the receiver has it`.
 
-![A file chosen](screenshots/product/send-picked.png)
+   ![Sending](screenshots/product/sending.png)
 
-![Sending](screenshots/product/sending.png)
+6. To send a message instead of a file, type it in the box under the file
+   area and press **Send text**. It travels as a small file called
+   `message.txt` and the receiver shows it on screen as soon as it lands,
+   with the same **Save file** button underneath. A passphrase applies to
+   messages too.
 
-![Too big](screenshots/product/too-big.png)
+**Speed and limits**, folded under the Send card, is a table of how long
+each size takes. It is computed from the frame format rather than typed in:
+768 bytes of your file per 2.07-second frame, plus two spare frames, so a
+1 kB message is a few seconds and the 2 MB maximum is over an hour. Real
+rooms need a few extra frames when noise costs one, and text compresses
+before it is sent, which is why a text file often finishes early.
 
 ## Passphrase
 
@@ -138,9 +156,9 @@ reported, not silently decrypted into garbage, and you can try again.
 One frame is 2.07 s of sound and carries 768 bytes of the file, 372 bytes per second. The table is for a file that does not compress and a transfer that loses nothing; text usually compresses two to three times, and every lost frame adds one more.
 <!-- /gen:timing -->
 
-The estimate the page shows when you choose a file assumes some compression
-and a clean transfer, so a photo will usually take longer than it says, and
-a text file less. What helps: the devices close together, still, and the
+The estimate the page shows when you choose a file is for the file as it is,
+uncompressed, with a little slack for a clean transfer; a text file usually
+finishes sooner, and a noisy room makes anything take longer. What helps: the devices close together, still, and the
 room quiet. What does not help: turning the volume all the way up.
 
 ## On a phone
@@ -164,11 +182,12 @@ Open **Advanced** when you want to see what the engine is doing.
   gain to be off, because all three eat the signal; a browser that keeps one
   on says `true` there.
 - The spectrogram shows what the microphone hears, so it stays blank on the
-  sending side. It scrolls right to left and covers 0 to 5 kHz, low at the
-  bottom. The signal occupies 1.5 to 7.5 kHz, so you see its lower part: a
-  bright band from the white line at 1.5 kHz to the top of the picture, in
-  two-second blocks with short gaps between them. A blank spectrogram while
-  the other device is playing means the microphone is not hearing it.
+  sending side. It scrolls right to left and covers 0 to 8 kHz, low at the
+  bottom. The two white lines mark the edges of the signal, 1.5 and
+  7.5 kHz: a good transfer is a bright band between them, in two-second
+  blocks with short gaps, and not much below the lower line. A blank
+  spectrogram while the other device is playing means the microphone is not
+  hearing it.
 - The log. `listening (worklet)` when the microphone opens; `frame ok (3
   droplets, 0 bad)` for each frame decoded, where a droplet is one of the
   three pieces of the file inside a frame and `bad` counts pieces that
@@ -203,7 +222,7 @@ a forty-minute soak of the receive pipeline.
 | `wrong passphrase (or a corrupted transfer that still passed CRC)` | The passphrase differs from the sender's | Type it again, exactly; passphrases are case-sensitive |
 | `Over 2 MB — at the speed of sound through air that is hours. Smaller, please.` | The file is over the limit | Send something smaller, or compress it first |
 | `transfer not complete` | **Unlock** was pressed before the transfer finished | Wait for `received.` |
-| **Save file** does nothing on a phone | The share sheet was dismissed | Press it again |
+| **Save file** on a phone downloads instead of sharing | The share sheet was dismissed, or this browser cannot share files | It is the same file; look in the browser's downloads |
 
 When a transfer fails in a way this table does not cover, the lab page can
 record what the microphone heard as a WAV file, which is the most useful
@@ -211,14 +230,17 @@ thing to attach to a bug report; see [LAB.md](LAB.md).
 
 ## Every control
 
-Send card: **Choose a file** (or drop one on the box), the passphrase box
-under it, **Start sending**, which becomes **Stop** while sending, then the
-progress bar and status line.
+Send card: **Choose a file** (or drop one on the box), **Use the sample
+file** beside the size note, the message box with **Send text**, the
+passphrase box, **Start sending**, which becomes **Stop** while sending,
+then the progress bar, the status line, and **Speed and limits** folded
+underneath.
 
 Receive card: **Listen**, which becomes **Stop listening** while the
 microphone is open, the progress bar and status line, and the result box
-with the file's name, the passphrase field and **Unlock** when the sender
-encrypted, **Save file** when the file is ready, and a line saying which.
+with the file's name, the text itself when it is a short text file, the
+passphrase field and **Unlock** when the sender encrypted, **Save file**
+when the file is ready, and a line saying which.
 
 **Advanced** opens the engine line, the spectrogram, the log, and links to
 the lab page and the device checks.

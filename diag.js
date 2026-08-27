@@ -101,7 +101,13 @@
     }
 
     draw() {
-      if (!this.pending.length) return;
+      if (!this.pending.length) {
+        // Idle and just made visible: size the canvas now, or the browser
+        // stretches its default 300x140 to the CSS width and shows a tall
+        // black box until the first column arrives.
+        if (this.c.clientWidth && this.c.width !== this.c.clientWidth) { const { W, H } = fit(this.c); this.g.fillStyle = '#000'; this.g.fillRect(0, 0, W, H); }
+        return;
+      }
       const { W, H } = fit(this.c);
       const g = this.g;
       const cols = this.pending;

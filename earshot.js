@@ -8,16 +8,36 @@
   const $ = (id) => document.getElementById(id);
   const ui = {};
   for (const id of ['drop', 'file', 'dropText', 'fileInfo', 'txPass', 'send', 'stopSend', 'txProgress', 'txStatus',
-    'listen', 'stopListen', 'rxProgress', 'rxStatus', 'result', 'resultName', 'passRow', 'rxPass', 'unlock', 'save',
+    'sample', 'txText', 'sendText', 'benchmarks',
+    'listen', 'stopListen', 'rxProgress', 'rxStatus', 'result', 'resultName', 'resultText', 'passRow', 'rxPass', 'unlock', 'save',
     'resultStatus', 'advanced', 'engineInfo', 'spec', 'log']) ui[id] = $(id);
 
   const log = new Diag.Log(ui.log, 250);
-  const spec = new Diag.Spectrogram(ui.spec);
+  const spec = new Diag.Spectrogram(ui.spec, { maxHz: 8000 });
   const specDraw = { draw: () => { if (ui.advanced.open) spec.draw(); } };
   Diag.loop([specDraw], 10);
 
   const FS = 48000;
   const FRAME_SEC = (1920 + Air.GUARD + 75 * 1280 + 32 + Air.GAP) / FS;
+  const MAX_BYTES = 2 * 1048576;
+
+  // One formula for every estimate on the page, so the numbers cannot drift
+  // from the code: three 256-byte droplets (768 bytes) per 2.07 s frame,
+  // plus two spare frames.
+  function framesFor(bytes) { return Math.ceil((Math.ceil(bytes / Fountain.BLOCK) || 1) / Air.DROPLETS_PER_FRAME) + 2; }
+  function secondsFor(bytes) { return framesFor(bytes) * FRAME_SEC + 1; }
+
+  const SAMPLE_TEXT = [
+    'Hello from earshot.',
+    '',
+    'This message left one device as sound and arrived on another through the air:',
+    'a 40 ms chirp so the receiver could find the start, then OFDM symbols on 116',
+    'subcarriers between 1.5 and 7.5 kHz, protected by a convolutional code and a',
+    'fountain code so a lost frame costs time, not the file.',
+    '',
+    'If you can read this, the whole chain worked. Sample check digits: 31415926535.',
+    '',
+  ].join('\n');
   const fmtBytes = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' kB' : (n / 1048576).toFixed(2) + ' MB');
   const fmtTime = (s) => { s = Math.max(0, Math.round(s)); return s < 90 ? s + ' s' : Math.round(s / 60) + ' min'; };
 
@@ -47,13 +67,27 @@
 
   function pickFile(f) {
     if (!f) return;
-    if (f.size > 2 * 1048576) { ui.fileInfo.innerHTML = '<span class="bad">Over 2 MB — at the speed of sound through air that is hours. Smaller, please.</span>'; return; }
+    if (f.size > MAX_BYTES) { ui.fileInfo.innerHTML = '<span class="bad">Over 2 MB — at the speed of sound through air that is hours. Smaller, please.</span>'; return; }
     tx.file = f;
     ui.dropText.innerHTML = '📄 ' + f.name + '<br><span class="hint">tap to change</span>';
-    const secs = Math.ceil(f.size / 1043) * FRAME_SEC * 1.1 + 5;
-    ui.fileInfo.textContent = `${fmtBytes(f.size)} — about ${fmtTime(secs)} of sound, less if it compresses.`;
+    ui.fileInfo.textContent = `${fmtBytes(f.size)} — ${framesFor(f.size)} frames, about ${fmtTime(secondsFor(f.size))} of sound; less if it compresses.`;
     ui.send.disabled = false;
   }
+
+  ui.sample.addEventListener('click', () => {
+    pickFile(new File([new TextEncoder().encode(SAMPLE_TEXT)], 'earshot-sample.txt', { type: 'text/plain' }));
+  });
+
+  // The benchmark table, from the same formula as the live estimate.
+  (function fillBenchmarks() {
+    const rows = [[1024, '1 kB'], [10 * 1024, '10 kB'], [100 * 1024, '100 kB'], [500 * 1024, '500 kB'], [1048576, '1 MB'], [MAX_BYTES, '2 MB (max)']];
+    const tb = ui.benchmarks.querySelector('tbody');
+    for (const [bytes, label] of rows) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${label}</td><td>${framesFor(bytes)}</td><td>${fmtTime(secondsFor(bytes))}</td>`;
+      tb.appendChild(tr);
+    }
+  })();
   ui.file.addEventListener('change', () => pickFile(ui.file.files[0]));
   ui.drop.addEventListener('dragover', (e) => { e.preventDefault(); ui.drop.classList.add('hover'); });
   ui.drop.addEventListener('dragleave', () => ui.drop.classList.remove('hover'));
@@ -67,7 +101,7 @@
     const pass = ui.txPass.value.trim();
     const prep = await Air.prepare(bytes, tx.file.name, pass ? { passphrase: pass } : undefined);
     tx.sender = new Air.Sender(prep);
-    const blocks = Math.ceil(prep.payload.length / 256) || 1;
+    const blocks = Math.ceil(prep.payload.length / Fountain.BLOCK) || 1;
     tx.estFrames = Math.ceil(blocks / Air.DROPLETS_PER_FRAME) + 2;
     tx.playing = true; tx.done = 0;
     tx.startedAt = c.currentTime;
@@ -117,6 +151,17 @@
   ui.send.addEventListener('click', () => startSend().catch((e) => { ui.txStatus.textContent = e.message; ui.send.disabled = false; }));
   ui.stopSend.addEventListener('click', stopSend);
 
+  // A typed message travels as a small text file named message.txt; the
+  // receiver shows text files inline.
+  ui.sendText.addEventListener('click', () => {
+    const text = ui.txText.value;
+    if (!text.trim()) { ui.txStatus.textContent = 'type something first.'; return; }
+    tx.file = new File([new TextEncoder().encode(text)], 'message.txt', { type: 'text/plain' });
+    ui.dropText.innerHTML = '💬 message.txt<br><span class="hint">from the text box</span>';
+    ui.fileInfo.textContent = `${fmtBytes(tx.file.size)} — ${framesFor(tx.file.size)} frames, about ${fmtTime(secondsFor(tx.file.size))} of sound.`;
+    startSend().catch((e) => { ui.txStatus.textContent = e.message; ui.send.disabled = false; });
+  });
+
   // --------------------------------------------------------------- receive
 
   const rx = { worker: null, stream: null, node: null, proc: null, mute: null, listening: false, lastQuanta: 0, drops: 0, fileBytes: null, fileName: null, complete: null };
@@ -145,6 +190,15 @@
         ui.passRow.style.display = 'none';
         ui.save.style.display = '';
         ui.resultStatus.innerHTML = '<span class="ok">ready to save.</span>';
+        // short text shows inline - that is the whole point of "send a text"
+        if (/\.(txt|md|json|csv)$/i.test(m.name || '') && rx.fileBytes.length <= 8192) {
+          try {
+            ui.resultText.textContent = new TextDecoder('utf-8', { fatal: true }).decode(rx.fileBytes);
+            ui.resultText.style.display = '';
+          } catch (e) { ui.resultText.style.display = 'none'; }
+        } else {
+          ui.resultText.style.display = 'none';
+        }
         if (window.__autosave) saveFile();
       } else if (m.type === 'fileError') {
         ui.resultStatus.innerHTML = `<span class="bad">${m.message}</span>`;

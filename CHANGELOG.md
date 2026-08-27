@@ -8,6 +8,12 @@ between two physical devices. Everything below it is gated and green.
 - User guide for the product page, `docs/GUIDE.md`: a screenshot of every
   state, taken from the live page by `npm run guide`; the FSK guide moved to
   `docs/LAB.md`. `npm test` fails when either guide is behind the code.
+- Product page: the file box draws as a box, the spectrogram under
+  **Advanced** shows the whole 1.5–7.5 kHz band, and the time estimate
+  counts the 768 bytes a frame really carries.
+- Product page: **Use the sample file** for a ten-second demo, **Send
+  text** to send a typed message (shown on the receiver's screen), and a
+  **Speed and limits** table computed from the frame format.
 
 ## 0.9.0 — 2026-08-27
 
