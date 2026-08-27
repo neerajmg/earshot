@@ -32,6 +32,8 @@
   .hint { color: var(--muted); font-size: 14px; }
   .fileinfo { margin: 12px 0 0; font-size: 15px; }
   input[type=password], input[type=text], textarea { font:inherit; background:#12171c; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; width:100%; resize: vertical; }
+  .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; margin:16px 0 4px; }
+  .or::before, .or::after { content:""; flex:1; border-top:1px solid var(--line); }
   .speed { margin-top:14px; color: var(--muted); font-size: 14px; }
   .speed table { border-collapse: collapse; margin-top: 8px; width: 100%; }
   .speed th, .speed td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
@@ -67,13 +69,14 @@
       <button id="sample">Use the sample file</button>
     </div>
     <div class="fileinfo" id="fileInfo"></div>
-    <div class="row"><textarea id="txText" rows="2" placeholder="…or type a short message to send as sound"></textarea></div>
-    <div class="row"><input type="password" id="txPass" placeholder="Passphrase (optional) — anyone in earshot can receive without one" autocomplete="off"></div>
     <div class="row">
       <button class="big" id="send" disabled>Start sending</button>
-      <button class="big" id="sendText">Send text</button>
       <button class="big stop" id="stopSend" style="display:none">Stop</button>
     </div>
+    <div class="or"><span>or send a message</span></div>
+    <div class="row"><textarea id="txText" rows="3" placeholder="Type a short message to send as sound"></textarea></div>
+    <div class="row"><button class="big" id="sendText">Send text</button></div>
+    <div class="row"><input type="password" id="txPass" placeholder="Passphrase (optional, for files and messages alike)" autocomplete="off"></div>
     <progress id="txProgress" value="0" max="1" style="display:none"></progress>
     <div class="status" id="txStatus"></div>
     <details class="speed">

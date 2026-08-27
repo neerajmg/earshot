@@ -94,9 +94,12 @@ If the sender set a passphrase, the result box asks for it before
 
    ![A file chosen](screenshots/product/send-picked.png)
 
+   ![The sample file, ready to send](screenshots/product/sample-file.png)
+
    ![Too big](screenshots/product/too-big.png)
 
-2. Optionally type a passphrase in the box under it. See
+2. Optionally type a passphrase in the field at the bottom of the card,
+   under **Send text**; it applies to files and messages alike. See
    [Passphrase](#passphrase).
 3. Wait until the other device says it is listening, then press
    **Start sending**. The status says `preparing…` for a moment
@@ -118,12 +121,18 @@ If the sender set a passphrase, the result box asks for it before
    with the same **Save file** button underneath. A passphrase applies to
    messages too.
 
+   ![A message being sent](screenshots/product/send-text.png)
+
+   ![The message, shown on the receiver as it lands](screenshots/product/received-text.png)
+
 **Speed and limits**, folded under the Send card, is a table of how long
 each size takes. It is computed from the frame format rather than typed in:
 768 bytes of your file per 2.07-second frame, plus two spare frames, so a
 1 kB message is a few seconds and the 2 MB maximum is over an hour. Real
 rooms need a few extra frames when noise costs one, and text compresses
 before it is sent, which is why a text file often finishes early.
+
+![Speed and limits, opened](screenshots/product/speed-and-limits.png)
 
 ## Passphrase
 
@@ -230,11 +239,11 @@ thing to attach to a bug report; see [LAB.md](LAB.md).
 
 ## Every control
 
-Send card: **Choose a file** (or drop one on the box), **Use the sample
-file** beside the size note, the message box with **Send text**, the
-passphrase box, **Start sending**, which becomes **Stop** while sending,
-then the progress bar, the status line, and **Speed and limits** folded
-underneath.
+Send card, top to bottom: **Choose a file** (or drop one on the box),
+**Use the sample file** beside the size note, **Start sending**, which
+becomes **Stop** while sending; then an "or send a message" divider, the
+message box and **Send text**; then the passphrase field, the progress bar,
+the status line, and **Speed and limits** folded underneath.
 
 Receive card: **Listen**, which becomes **Stop listening** while the
 microphone is open, the progress bar and status line, and the result box

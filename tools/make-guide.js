@@ -364,6 +364,8 @@ function productSample() {
   return { name: 'readings.csv', text: lines.join('\n') + '\n', passphrase: 'otter' };
 }
 
+const MESSAGE_TEXT = 'Meet at the north gate at six. Bring the blue folder.';
+
 // The same transfer under enough white noise that droplets fail their CRC and
 // the progress bar stalls: what a marginal room looks like on this page.
 // Searched, not fixed, so the picture stays meaningful as the engine changes.
@@ -400,6 +402,16 @@ async function captureProduct(t, work, port, shots) {
   const noisy = productNoisy(prep, frames);
   const noisyWav = path.join(work, 'mic-product-noisy.wav');
   if (noisy) micWavOf(noisy.signal, noisyWav);
+  // A typed message: what "Send text" puts on the air, unencrypted, so the
+  // receiver shows it inline the moment it lands.
+  const msgPrep = await Air.prepare(new Uint8Array(Buffer.from(MESSAGE_TEXT)), 'message.txt');
+  const msgSender = new Air.Sender(msgPrep, { session: 11 });
+  const msgFrames = Math.ceil(Math.ceil(msgPrep.payload.length / Fountain.BLOCK) / Air.DROPLETS_PER_FRAME) + 2;
+  const msgParts = [new Float32Array(3 * Air.FS)];
+  for (let i = 0; i < msgFrames; i++) msgParts.push(msgSender.nextFrame());
+  msgParts.push(new Float32Array(Air.FS));
+  const messageWav = path.join(work, 'mic-product-message.wav');
+  micWavOf(ch.concat(msgParts), messageWav);
   console.log(`${sample.name}: ${bytes.length} bytes, ${prep.payload.length} on air (compressed, encrypted), ${blocks} blocks, ${frames} frames` +
     (noisy ? `; noisy copy at ${noisy.snr} dB: ${noisy.stats.droplets} droplets, ${noisy.stats.dropletCrcFail} failed CRC, ${noisy.complete ? 'complete' : 'incomplete'}` : '; no noise level produced failed droplets'));
 
@@ -421,6 +433,19 @@ async function captureProduct(t, work, port, shots) {
     await cdp.click('stopSend');
     await cdp.eval(`document.getElementById('advanced').open = true; 1`);
     files.push(await cdp.shot('#advanced', 'advanced-sending.png'));
+    // A fresh page for the sample file, the table and a typed message, so no
+    // progress bar from the send above lingers in the pictures.
+    await cdp.open(url);
+    await cdp.click('sample');
+    await cdp.until(`document.getElementById('dropText').textContent.includes('earshot-sample.txt')`, 10, 'the sample file');
+    files.push(await cdp.shot('#sendCard', 'sample-file.png'));
+    await cdp.eval(`document.querySelector('#sendCard details.speed').open = true; 1`);
+    files.push(await cdp.shot('#sendCard', 'speed-and-limits.png'));
+    await cdp.eval(`document.querySelector('#sendCard details.speed').open = false; document.getElementById('txText').value = ${JSON.stringify(MESSAGE_TEXT)}; 1`);
+    await cdp.click('sendText');
+    await cdp.until('earshotDebug.tx.done >= 1', 12, null);
+    files.push(await cdp.shot('#sendCard', 'send-text.png'));
+    await cdp.click('stopSend');
     errors.push(...cdp.errors());
     // The same page on a phone.
     await cdp.viewport({ ...PHONE, deviceScaleFactor: 2, mobile: true });
@@ -454,6 +479,17 @@ async function captureProduct(t, work, port, shots) {
     if (!same) throw new Error('the product page received a different number of bytes than were sent');
     errors.push(...cdp.errors());
   });
+  console.log('product page, receiving a typed message');
+  await withChrome({ url, ready: t.ready, shots, micWav: messageWav }, async (cdp) => {
+    await cdp.click('listen');
+    await cdp.until(`document.getElementById('rxStatus').textContent.startsWith('listening')`, 10, 'the microphone');
+    await cdp.until('!!earshotDebug.fileBytes', 60, 'the message to arrive');
+    await cdp.until(`document.getElementById('resultText').style.display !== 'none'`, 10, 'the message to show inline');
+    files.push(await cdp.shot('#recvCard', 'received-text.png'));
+    const shown = await cdp.eval(`document.getElementById('resultText').textContent`);
+    if (shown !== MESSAGE_TEXT) throw new Error('the receiver showed a different message than was sent');
+    errors.push(...cdp.errors());
+  });
   if (noisy) {
     console.log('product page, receiving through noise');
     await withChrome({ url, ready: t.ready, shots, micWav: noisyWav }, async (cdp) => {
@@ -468,6 +504,7 @@ async function captureProduct(t, work, port, shots) {
     });
   }
   return { files, errors, manifest: { sample: { name: sample.name, bytes: bytes.length, onAir: prep.payload.length, frames },
+    message: { bytes: Buffer.byteLength(MESSAGE_TEXT), onAir: msgPrep.payload.length, frames: msgFrames },
     noisy: noisy ? { snrDb: noisy.snr, droplets: noisy.stats.droplets, dropletCrcFail: noisy.stats.dropletCrcFail, complete: noisy.complete } : null } };
 }
 
