@@ -106,3 +106,23 @@ test('two chirps in one stream are both found', () => {
   assert.ok(Math.abs(found[0].tEnd - (24000 + CH.length)) <= 24);
   assert.ok(Math.abs(found[1].tEnd - (24000 + CH.length + 24000 + CH.length)) <= 24);
 });
+
+test('analyzeIR sees the late wall tap of the bad room and separates the rooms', () => {
+  const r = ch.rng(9);
+  const x = ch.awgn(ch.echoesFrac(embed(30000, 30000, r, 0), FS, ch.ROOM_BAD), 30, r);
+  const ir = Chirp.analyzeIR(x, FS);
+  assert.ok(ir, 'no detection');
+  // amplitude-dB display: the -15 dB tap at 11.7 ms appears near its level
+  const at = (ms) => ir.irDb[Math.round((ms + ir.preMs) * ir.bbFs / 1000)];
+  // superposed compressed pulses read a few dB hot; the window allows it
+  assert.ok(at(11.7) > -22 && at(11.7) < -4, '11.7 ms tap at ' + at(11.7).toFixed(1) + ' dB');
+  assert.ok(at(8) < at(11.7) - 3, 'valley before the tap: ' + at(8).toFixed(1));
+  const r2 = ch.rng(10);
+  const y = ch.awgn(ch.echoesFrac(embed(30000, 30000, r2, 0), FS, ch.ROOM_MEASURED), 30, r2);
+  const ir2 = Chirp.analyzeIR(y, FS);
+  assert.ok(ir2, 'no detection in the measured room');
+  // energy beyond a 5.33 ms prefix has to separate the two rooms clearly
+  assert.ok(ir.beyond533Db > -28, 'bad room beyond 5.33 ms: ' + ir.beyond533Db.toFixed(1) + ' dB');
+  assert.ok(ir2.beyond533Db < -32, 'measured room beyond 5.33 ms: ' + ir2.beyond533Db.toFixed(1) + ' dB');
+  assert.ok(ir.beyond533Db - ir2.beyond533Db > 6, 'separation ' + (ir.beyond533Db - ir2.beyond533Db).toFixed(1) + ' dB');
+});

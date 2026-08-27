@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>earshot room sounder</title>
+<style>
+  body { margin: 0; padding: 16px; font: 16px/1.5 -apple-system, system-ui, sans-serif; background: #111; color: #ddd; }
+  h1 { font-size: 18px; }
+  button { background: #245; color: #ddd; border: 1px solid #4a8; border-radius: 6px; padding: 10px 14px; font-size: 15px; }
+  pre { background: #000; padding: 10px; border-radius: 6px; white-space: pre-wrap; }
+  canvas { width: 100%; background: #000; border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>earshot room sounder</h1>
+<p>Plays a 40 ms chirp out of this device's speaker and matched-filters what the
+microphone hears. The result is the room's echo profile, which decides the OFDM
+cyclic prefix. Sit the device where a transfer would happen, volume around 60 %.
+Run it a few times; screenshot the numbers.</p>
+<button id="go">Sound the room</button>
+<pre id="out">not run</pre>
+<canvas id="ir" height="160"></canvas>
+<p id="hint"></p>
+<script src="../chirp.js"></script>
+<script>
+const out = document.getElementById('out');
+document.getElementById('go').onclick = async () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    await ctx.resume();
+    const fs = ctx.sampleRate;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    const src = ctx.createMediaStreamSource(stream);
+    const proc = ctx.createScriptProcessor(4096, 1, 1);
+    const mute = ctx.createGain(); mute.gain.value = 0;
+    src.connect(proc); proc.connect(mute); mute.connect(ctx.destination);
+    const chunks = [];
+    proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+
+    const chirp = Chirp.makeChirp(fs);
+    const buf = ctx.createBuffer(1, chirp.length + Math.round(0.3 * fs), fs);
+    buf.getChannelData(0).set(chirp, Math.round(0.1 * fs));
+    const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination);
+    out.textContent = 'sounding...';
+    s.start(ctx.currentTime + 0.3);
+    await new Promise((r) => setTimeout(r, 1400));
+    proc.onaudioprocess = null; proc.disconnect(); src.disconnect(); mute.disconnect();
+    stream.getTracks().forEach((t) => t.stop());
+    await ctx.close();
+
+    let n = 0; for (const c of chunks) n += c.length;
+    const x = new Float32Array(n); let off = 0;
+    for (const c of chunks) { x.set(c, off); off += c.length; }
+    const ir = Chirp.analyzeIR(x, fs);
+    if (!ir) { out.textContent = 'no chirp detected. Louder, or closer to a wall of the room it should measure.'; return; }
+    out.textContent =
+      'chirp found  gamma ' + ir.gamma.toFixed(2) + '  peak-to-sidelobe ' + ir.psr.toFixed(1) + ' dB\n' +
+      'echo energy beyond 2.67 ms:  ' + ir.beyond267Db.toFixed(1) + ' dB of the total\n' +
+      'echo energy beyond 5.33 ms:  ' + ir.beyond533Db.toFixed(1) + ' dB of the total\n' +
+      '\nreading: -30 dB or lower beyond a prefix means that prefix is safe here;\n' +
+      'above -25 dB, use the longer one. Quiet room and decent volume matter -\n' +
+      'background noise raises these numbers even with no echo.';
+    const cv = document.getElementById('ir'); cv.width = cv.clientWidth;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    g.strokeStyle = '#333';
+    for (const ms of [0, 2.67, 5.33, 10, 15, 20]) {
+      const xx = (ms + ir.preMs) / (ir.preMs + ir.postMs) * cv.width;
+      g.beginPath(); g.moveTo(xx, 0); g.lineTo(xx, cv.height); g.stroke();
+      g.fillStyle = '#888'; g.font = '10px sans-serif'; g.fillText(ms + 'ms', xx + 2, 10);
+    }
+    g.strokeStyle = '#4cf'; g.beginPath();
+    ir.irDb.forEach((db, i) => {
+      const xx = i / (ir.irDb.length - 1) * cv.width;
+      const yy = Math.min(cv.height - 1, -db / 60 * cv.height);
+      if (i === 0) g.moveTo(xx, yy); else g.lineTo(xx, yy);
+    });
+    g.stroke();
+  } catch (e) { out.textContent = 'failed: ' + e.message; }
+};
+</script>
+</body>
+</html>

@@ -99,6 +99,7 @@
       this.bbRe = new Float64Array(this.size);
       this.bbIm = new Float64Array(this.size);
       this.g = new Float32Array(this.size);          // gamma history for PSR/first-peak
+      this.pw = new Float32Array(this.size);         // raw |MF|^2, for impulse-response readout
       this.m = 0;                                     // baseband samples produced
       this.pow = 0;                                   // sliding sum of |bb|^2 over L
 
@@ -177,7 +178,7 @@
         }
 
         // matched filter at this position (window ends here)
-        let gamma = 0;
+        let gamma = 0, yPow = 0;
         if (this.m >= this.L - 1 && this.pow > 1e-12) {
           let yR = 0, yI = 0;
           for (let k = 0; k < this.L; k++) {
@@ -187,9 +188,11 @@
             yR += br * kr - bi * ki;
             yI += br * ki + bi * kr;
           }
-          gamma = (yR * yR + yI * yI) / (this.Eref * this.pow);
+          yPow = yR * yR + yI * yI;
+          gamma = yPow / (this.Eref * this.pow);
         }
         this.g[mi] = gamma;
+        this.pw[mi] = yPow;
 
         // candidate tracking: local max, confirmed one chirp-length later
         if (this.m > this.holdUntil && gamma >= o.threshold && (!this.best || gamma > this.best.gamma)) {
@@ -228,7 +231,52 @@
     }
   }
 
-  const Chirp = { makeChirp, Detector, DEFAULTS };
+  // Offline helper: find the first chirp in x and return the matched-filter
+  // envelope around it - which IS the room's impulse response. Used by the
+  // /checks/room.html sounder and by tests. Span in milliseconds.
+  function analyzeIR(x, fs, opts) {
+    let det0 = null;
+    const det = new Detector(fs, { onDetect: (d) => { if (!det0) det0 = d; } }, opts);
+    // Push in chunks and stop at the first detection: the ring only holds a
+    // few thousand baseband samples, and pushing the whole signal would
+    // overwrite the very window this function wants to read.
+    for (let o = 0; o < x.length && !det0; o += 4096) det.push(x.subarray(o, Math.min(x.length, o + 4096)));
+    if (!det0) return null;
+    const bbFs = det.bbFs;
+    const preMs = 2, postMs = 20;
+    const mEnd = Math.round((det0.tEnd - det.calib) / det.D);
+    const out = [];
+    let peak = 1e-12;
+    for (let dm = -Math.round(preMs * bbFs / 1000); dm <= Math.round(postMs * bbFs / 1000); dm++) {
+      const m = mEnd + dm;
+      const v = m >= 0 ? det.pw[m & det.mask] : 0;   // raw |MF|^2: gamma's denominator distorts the tail
+      out.push(v);
+      if (v > peak) peak = v;
+    }
+    // Confirm the window is still inside the ring: the newest baseband
+    // sample minus the ring size must lie before the window start.
+    if (det.m - det.size > mEnd - Math.round(preMs * bbFs / 1000)) return null;
+    // energy beyond candidate cyclic prefixes, relative to total IR energy
+    let total = 0, beyond267 = 0, beyond533 = 0;
+    for (let i = 0; i < out.length; i++) {
+      const ms = (i - Math.round(preMs * bbFs / 1000)) / bbFs * 1000;
+      if (ms < 0) continue;
+      total += out[i];
+      if (ms > 2.67) beyond267 += out[i];
+      if (ms > 5.33) beyond533 += out[i];
+    }
+    return {
+      tEnd: det0.tEnd, gamma: det0.gamma, psr: det0.psr,
+      bbFs, preMs, postMs,
+      // amplitude dB, so a -15 dB echo tap reads as about -15
+      irDb: out.map((v) => 10 * Math.log10(Math.sqrt(v / peak) + 1e-9)),
+      // energy fractions stay in the power domain - that is what drives ISI
+      beyond267Db: 10 * Math.log10(beyond267 / total + 1e-9),
+      beyond533Db: 10 * Math.log10(beyond533 / total + 1e-9),
+    };
+  }
+
+  const Chirp = { makeChirp, Detector, analyzeIR, DEFAULTS };
   root.Chirp = Chirp;
   if (typeof module !== 'undefined' && module.exports) module.exports = Chirp;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
