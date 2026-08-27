@@ -74,6 +74,7 @@ document.getElementById('go').onclick = async () => {
   node.port.onmessage = (e) => {
     stats.chunks++;
     const q = e.data.quanta;
+    if (!stats.t0) { stats.t0 = performance.now(); stats.q0 = q - 32; }   // baseline at first chunk, not at the button press
     if (lastQuanta && q - lastQuanta > 40) stats.gaps++;   // a 4096 chunk is 32 quanta
     lastQuanta = q;
     stats.quanta = q;
@@ -88,8 +89,9 @@ document.getElementById('go').onclick = async () => {
   const END = 40 * 60 * 1000;
   const tick = setInterval(() => {
     const el = (performance.now() - stats.started) / 1000;
-    stats.expectedQuanta = Math.round(el * ctx.sampleRate / 128);
-    stats.droppedQuanta = Math.max(0, stats.expectedQuanta - stats.quanta);
+    const since = stats.t0 ? (performance.now() - stats.t0) / 1000 : 0;
+    stats.expectedQuanta = Math.round(since * ctx.sampleRate / 128);
+    stats.droppedQuanta = Math.max(0, stats.expectedQuanta - (stats.quanta - (stats.q0 || 0)));
     out.textContent =
       'elapsed          ' + Math.floor(el / 60) + 'm ' + Math.floor(el % 60) + 's of 40m\n' +
       'context rate     ' + ctx.sampleRate + ' Hz (' + ctx.state + ')\n' +
