@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>earshot soak test</title>
+<style>
+  body { margin: 0; padding: 16px; font: 16px/1.5 -apple-system, system-ui, sans-serif; background: #111; color: #ddd; }
+  h1 { font-size: 18px; }
+  button { background: #245; color: #ddd; border: 1px solid #4a8; border-radius: 6px; padding: 10px 14px; font-size: 15px; }
+  pre { background: #000; padding: 10px; border-radius: 6px; font-size: 14px; }
+  .warn { color: #fa6; }
+</style>
+</head>
+<body>
+<h1>earshot 40-minute pipeline soak</h1>
+<p>Runs the real receive pipeline shape — AudioWorklet capture, a Worker doing
+OFDM-sized FFT work on every chunk — for 40 minutes, counting anything dropped or
+late. Keep this page in the foreground with the screen on. Screenshot the result.</p>
+<button id="go">Start soak</button>
+<pre id="out">not running</pre>
+<p class="warn" id="vis"></p>
+<script>
+const out = document.getElementById('out');
+const stats = { started: 0, chunks: 0, quanta: 0, expectedQuanta: 0, droppedQuanta: 0, gaps: 0, workerMsMax: 0, workerBusy: 0, hiddenCount: 0, rafSlow: 0 };
+let lastQuanta = 0;
+
+const workerSrc = `
+  // Representative demod cost per 4096-sample chunk: four 1024-point complex
+  // FFT passes plus a Viterbi-sized integer loop.
+  const N = 1024;
+  const cos = new Float32Array(N/2), sin = new Float32Array(N/2);
+  for (let i = 0; i < N/2; i++) { cos[i] = Math.cos(2*Math.PI*i/N); sin[i] = -Math.sin(2*Math.PI*i/N); }
+  const rev = new Uint32Array(N);
+  for (let i = 0; i < N; i++) { let r = 0; for (let b = 0; b < 10; b++) r |= ((i>>b)&1) << (9-b); rev[i] = r; }
+  const re = new Float32Array(N), im = new Float32Array(N);
+  function fft() {
+    for (let i = 0; i < N; i++) { const j = rev[i]; if (j > i) { let t = re[i]; re[i]=re[j]; re[j]=t; t = im[i]; im[i]=im[j]; im[j]=t; } }
+    for (let size = 2; size <= N; size <<= 1) {
+      const half = size >> 1, step = N / size;
+      for (let s = 0; s < N; s += size) for (let k = 0; k < half; k++) {
+        const wr = cos[k*step], wi = sin[k*step], a = s+k, b = a+half;
+        const tr = re[b]*wr - im[b]*wi, ti = re[b]*wi + im[b]*wr;
+        re[b] = re[a]-tr; im[b] = im[a]-ti; re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  onmessage = (e) => {
+    const t0 = performance.now();
+    const x = new Float32Array(e.data);
+    for (let pass = 0; pass < 4; pass++) {
+      for (let i = 0; i < N; i++) { re[i] = x[(pass*N+i) % x.length]; im[i] = 0; }
+      fft();
+    }
+    let acc = 0;
+    for (let i = 0; i < 350000; i++) acc = (acc + i) & 0xFFFF;   // Viterbi-sized integer work
+    postMessage({ ms: performance.now() - t0, acc });
+  };
+`;
+
+document.getElementById('go').onclick = async () => {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+  await ctx.resume();
+  try { await navigator.wakeLock.request('screen'); } catch (e) { /* old browser */ }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  await ctx.audioWorklet.addModule('capture-worklet.js');
+  const src = ctx.createMediaStreamSource(stream);
+  const node = new AudioWorkletNode(ctx, 'capture', { numberOfInputs: 1, numberOfOutputs: 1 });
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+  const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' })));
+  let inFlight = 0;
+  worker.onmessage = (e) => { inFlight--; if (e.data.ms > stats.workerMsMax) stats.workerMsMax = e.data.ms; };
+  node.port.onmessage = (e) => {
+    stats.chunks++;
+    const q = e.data.quanta;
+    if (lastQuanta && q - lastQuanta > 40) stats.gaps++;   // a 4096 chunk is 32 quanta
+    lastQuanta = q;
+    stats.quanta = q;
+    if (inFlight > 2) { stats.workerBusy++; return; }       // backlogged worker: count, drop
+    inFlight++;
+    worker.postMessage(e.data.buf, [e.data.buf]);
+  };
+  stats.started = performance.now();
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stats.hiddenCount++; });
+  let lastRaf = performance.now();
+  (function raf(t) { if (t - lastRaf > 500) stats.rafSlow++; lastRaf = t; requestAnimationFrame(raf); })(performance.now());
+  const END = 40 * 60 * 1000;
+  const tick = setInterval(() => {
+    const el = (performance.now() - stats.started) / 1000;
+    stats.expectedQuanta = Math.round(el * ctx.sampleRate / 128);
+    stats.droppedQuanta = Math.max(0, stats.expectedQuanta - stats.quanta);
+    out.textContent =
+      'elapsed          ' + Math.floor(el / 60) + 'm ' + Math.floor(el % 60) + 's of 40m\n' +
+      'context rate     ' + ctx.sampleRate + ' Hz (' + ctx.state + ')\n' +
+      'chunks           ' + stats.chunks + '\n' +
+      'quanta seen      ' + stats.quanta + ' of ~' + stats.expectedQuanta + '\n' +
+      'quanta missing   ' + stats.droppedQuanta + '  (' + (100 * stats.droppedQuanta / Math.max(1, stats.expectedQuanta)).toFixed(3) + ' %)\n' +
+      'capture gaps     ' + stats.gaps + '\n' +
+      'worker max ms    ' + stats.workerMsMax.toFixed(1) + '  (budget: 85 ms per chunk)\n' +
+      'worker backlog   ' + stats.workerBusy + ' chunks skipped\n' +
+      'page hidden      ' + stats.hiddenCount + ' times, slow frames ' + stats.rafSlow + '\n' +
+      (el * 1000 >= END ? '\nDONE - screenshot this.' : '');
+    if (el * 1000 >= END) clearInterval(tick);
+  }, 1000);
+  document.getElementById('go').disabled = true;
+};
+</script>
+</body>
+</html>
