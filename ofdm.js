@@ -1,0 +1,227 @@
+// ofdm.js -- the OFDM physical layer. New engine beside dsp.js, shares none
+// of its code: dsp.js is binary-FSK to the bone.
+//
+// Numbers (from the design review): N = 1024 at a forced 48 kHz, so
+// subcarriers sit 46.875 Hz apart; bins 32..159 span 1500-7500 Hz. Of the
+// 128: 116 carry data, 8 are continual pilots, 4 stay silent so the noise
+// floor is measurable per symbol with no history games. Cyclic prefix 256
+// samples (a 128 profile can come later), 32-sample raised-cosine tails
+// overlap-added so the spectrum does not click. A Zadoff-Chu symbol leads
+// each frame for channel estimation.
+//
+// Exposes one global, `Ofdm`. Requires fft.js.
+
+(function (root) {
+  'use strict';
+
+  const FFT = root.FFT || (typeof require !== 'undefined' ? require('./fft.js') : null);
+  if (!FFT) throw new Error('ofdm.js needs fft.js');
+
+  const TWO_PI = 2 * Math.PI;
+
+  const P = {
+    fs: 48000,
+    N: 1024,
+    cp: 256,
+    roll: 32,                    // raised-cosine tail, overlap-added
+    binLo: 32,                   // 1500 Hz
+    binHi: 159,                  // 7453 Hz
+    paprDb: 8,
+    paprIters: 2,
+  };
+  P.symbolLen = P.N + P.cp;                          // 1280 -> 37.5 symbols/s
+  P.bins = [];
+  for (let b = P.binLo; b <= P.binHi; b++) P.bins.push(b);
+  P.pilots = [38, 54, 70, 86, 102, 118, 134, 150];
+  P.nulls = [45, 77, 109, 141];
+  P.data = P.bins.filter((b) => !P.pilots.includes(b) && !P.nulls.includes(b));   // 116 bins
+
+  // Pilot values: fixed pseudo-random QPSK so the pilot line is not a tone.
+  const PILOT_VAL = P.pilots.map((b, i) => {
+    const ph = (TWO_PI * ((i * 7 + 3) % 8)) / 8;
+    return [Math.cos(ph), Math.sin(ph)];
+  });
+
+  // Zadoff-Chu across the 128 used bins: constant amplitude in frequency,
+  // low PAPR in time, ideal for one-shot channel estimation.
+  const ZC = P.bins.map((b, n) => {
+    const ph = -Math.PI * 25 * n * n / P.bins.length;
+    return [Math.cos(ph), Math.sin(ph)];
+  });
+
+  const fft = FFT.makeFFT(P.N);
+  const ifft = FFT.makeIFFT(P.N);
+
+  // ---------------------------------------------------------------- TX
+
+  // One OFDM symbol from a frequency-domain map: values[b] = [re, im] for
+  // each occupied bin. Returns N+cp+roll samples; the last `roll` samples
+  // are a tail meant to overlap-add into the next symbol's head.
+  function synthesize(values, opts) {
+    const papr = !opts || opts.papr !== false;
+    const re = new Float64Array(P.N), im = new Float64Array(P.N);
+    for (const [b, v] of values) {
+      re[b] = v[0]; im[b] = v[1];
+      re[P.N - b] = v[0]; im[P.N - b] = -v[1];       // hermitian: real output
+    }
+    ifft(re, im);
+    // PAPR shaping: clip against the target, then re-confine to the band.
+    // It buys back ~3.5 dB of radiated power on a peak-limited speaker and
+    // costs an in-band distortion floor around -23 dB - which is why the
+    // linearity gate below measures with it off.
+    for (let it = 0; it < (papr ? P.paprIters : 0); it++) {
+      let pow = 0;
+      for (let i = 0; i < P.N; i++) pow += re[i] * re[i];
+      const rms = Math.sqrt(pow / P.N);
+      const limit = rms * Math.pow(10, P.paprDb / 20);
+      let clipped = false;
+      for (let i = 0; i < P.N; i++) {
+        if (re[i] > limit) { re[i] = limit; clipped = true; }
+        else if (re[i] < -limit) { re[i] = -limit; clipped = true; }
+      }
+      if (!clipped) break;
+      for (let i = 0; i < P.N; i++) im[i] = 0;
+      fft(re, im);
+      const keep = new Uint8Array(P.N);
+      for (const [b] of values) { keep[b] = 1; keep[P.N - b] = 1; }
+      for (let i = 0; i < P.N; i++) if (!keep[i]) { re[i] = 0; im[i] = 0; }
+      ifft(re, im);
+    }
+    // assemble cp + body + rc tail
+    const out = new Float64Array(P.cp + P.N + P.roll);
+    for (let i = 0; i < P.cp; i++) out[i] = re[P.N - P.cp + i];
+    for (let i = 0; i < P.N; i++) out[P.cp + i] = re[i];
+    for (let i = 0; i < P.roll; i++) out[P.cp + P.N + i] = re[i % P.N];   // cyclic continuation
+    // raised-cosine edges
+    for (let i = 0; i < P.roll; i++) {
+      const w = 0.5 - 0.5 * Math.cos(Math.PI * i / P.roll);
+      out[i] *= w;
+      out[out.length - 1 - i] *= w;
+    }
+    return out;
+  }
+
+  function ceValues() { return P.bins.map((b, n) => [b, ZC[n]]); }
+
+  function dataValues(qpsk) {
+    // qpsk: array of 116 [re,im]
+    const vals = [];
+    for (let i = 0; i < P.data.length; i++) vals.push([P.data[i], qpsk[i]]);
+    for (let i = 0; i < P.pilots.length; i++) vals.push([P.pilots[i], PILOT_VAL[i]]);
+    return vals;
+  }
+
+  // A frame body: CE symbol then the data symbols, overlap-added, scaled to
+  // a peak of `amplitude`. `symbols` is an array of 116-entry QPSK arrays.
+  function txBody(symbols, amplitude, opts) {
+    const parts = [synthesize(ceValues(), opts)].concat(symbols.map((s) => synthesize(dataValues(s), opts)));
+    const step = P.symbolLen;
+    const total = step * parts.length + P.roll;
+    const out = new Float32Array(total);
+    for (let s = 0; s < parts.length; s++) {
+      const off = s * step;
+      for (let i = 0; i < parts[s].length; i++) out[off + i] += parts[s][i];
+    }
+    let peak = 1e-12;
+    for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));
+    const g = (amplitude === undefined ? 0.8 : amplitude) / peak;
+    for (let i = 0; i < out.length; i++) out[i] *= g;
+    return out;
+  }
+
+  // ---------------------------------------------------------------- RX
+
+  // Demodulate a frame body that starts at sample `start` in x (start = the
+  // first sample of the CE symbol's cyclic prefix). Returns per-symbol
+  // equalized data-bin values plus channel and noise state.
+  function rxBody(x, start, nSymbols) {
+    const win = Math.round(0.6 * P.cp);              // FFT window offset into the CP
+    const re = new Float64Array(P.N), im = new Float64Array(P.N);
+
+    function binsAt(off) {
+      for (let i = 0; i < P.N; i++) { const v = x[off + i]; re[i] = v === undefined ? 0 : v; im[i] = 0; }
+      fft(re, im);
+      const out = new Map();
+      for (const b of P.bins) out.set(b, [re[b], im[b]]);
+      return out;
+    }
+
+    // channel estimate from the CE symbol
+    const ce = binsAt(start + win);
+    const H = new Map();
+    P.bins.forEach((b, n) => {
+      const y = ce.get(b), z = ZC[n];
+      // H = Y / Z ; |Z| = 1 so division is multiply by conjugate
+      H.set(b, [y[0] * z[0] + y[1] * z[1], y[1] * z[0] - y[0] * z[1]]);
+    });
+    // the CE window offset (win) imprints a phase ramp on H itself; that is
+    // fine - the same ramp sits on every data symbol and divides out.
+
+    const symbols = [];
+    let noisePow = 0, noiseCount = 0;
+    for (let s = 0; s < nSymbols; s++) {
+      const off = start + (s + 1) * P.symbolLen + win;
+      const Y = binsAt(off);
+
+      // pilots: common phase + gain, and a timing-drift slope across bins
+      let pr = 0, pi = 0, slopeNum = 0, slopeDen = 0;
+      const pilotPh = [];
+      P.pilots.forEach((b, i) => {
+        const y = Y.get(b), h = H.get(b), v = PILOT_VAL[i];
+        // expected = H * pilot; rotate measured against expectation
+        const er = h[0] * v[0] - h[1] * v[1], ei = h[0] * v[1] + h[1] * v[0];
+        const rr = y[0] * er + y[1] * ei, ri = y[1] * er - y[0] * ei;
+        pr += rr; pi += ri;
+        pilotPh.push([b, Math.atan2(ri, rr)]);
+      });
+      const commonPh = Math.atan2(pi, pr);
+      // unwrapped-ish linear fit of residual phase vs bin for timing drift
+      let num = 0, den = 0;
+      const mid = (P.binLo + P.binHi) / 2;
+      for (const [b, ph] of pilotPh) {
+        let d = ph - commonPh;
+        while (d > Math.PI) d -= TWO_PI;
+        while (d < -Math.PI) d += TWO_PI;
+        num += (b - mid) * d;
+        den += (b - mid) * (b - mid);
+      }
+      const slope = den ? num / den : 0;             // rad per bin
+
+      // common gain from pilot magnitude vs channel magnitude
+      let gNum = 0, gDen = 0;
+      P.pilots.forEach((b, i) => {
+        const y = Y.get(b), h = H.get(b);
+        gNum += Math.hypot(y[0], y[1]);
+        gDen += Math.hypot(h[0], h[1]);
+      });
+      const gain = gDen > 1e-12 ? gNum / gDen : 1;
+
+      // noise from the null bins
+      for (const b of P.nulls) {
+        const y = Y.get(b);
+        noisePow += y[0] * y[0] + y[1] * y[1];
+        noiseCount++;
+      }
+
+      // equalize data bins: undo channel, common phase, slope, gain
+      const eq = [];
+      for (const b of P.data) {
+        const y = Y.get(b), h = H.get(b);
+        const hh = h[0] * h[0] + h[1] * h[1];
+        const ph = commonPh + slope * (b - mid);
+        const c = Math.cos(ph), sn = Math.sin(ph);
+        // y * e^{-j ph} * conj(h) / (|h|^2 * gain)
+        const yr = y[0] * c + y[1] * sn, yi = y[1] * c - y[0] * sn;
+        const zr = (yr * h[0] + yi * h[1]) / (hh * gain + 1e-20);
+        const zi = (yi * h[0] - yr * h[1]) / (hh * gain + 1e-20);
+        eq.push([zr, zi, hh]);                        // hh: for LLR weighting later
+      }
+      symbols.push({ eq, commonPh, slope, gain });
+    }
+    return { symbols, H, noisePow: noiseCount ? noisePow / noiseCount : 0 };
+  }
+
+  const Ofdm = { P, synthesize, ceValues, dataValues, txBody, rxBody, ZC, PILOT_VAL };
+  root.Ofdm = Ofdm;
+  if (typeof module !== 'undefined' && module.exports) module.exports = Ofdm;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
