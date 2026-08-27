@@ -83,15 +83,55 @@
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
 
+  // ---------------------------------------------------------- encryption
+
+  // Optional passphrase: AES-256-GCM with a PBKDF2-derived key. Sound is a
+  // broadcast - anyone in earshot with this same public page decodes the
+  // transfer - so the docs say that plainly and this is the fix. Compression
+  // happens first (ciphertext does not compress); salt and IV travel in
+  // front of the ciphertext; GCM's tag upgrades integrity from CRC-against-
+  // noise to proof-against-tampering.
+  const PBKDF2_ITERS = 210000;
+
+  async function deriveKey(passphrase, salt) {
+    const raw = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+      raw, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+
+  async function encrypt(bytes, passphrase) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(passphrase, salt);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+    const out = new Uint8Array(28 + ct.length);
+    out.set(salt, 0); out.set(iv, 16); out.set(ct, 28);
+    return out;
+  }
+
+  async function decrypt(bytes, passphrase) {
+    const key = await deriveKey(passphrase, bytes.subarray(0, 16));
+    try {
+      return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.subarray(16, 28) }, key, bytes.subarray(28)));
+    } catch (e) {
+      throw new Error('wrong passphrase (or a corrupted transfer that still passed CRC)');
+    }
+  }
+
   // -------------------------------------------------------------- sender
 
   // Prepares a file: compresses if that helps, cuts into fountain windows.
-  async function prepare(bytes, name) {
+  async function prepare(bytes, name, opts) {
     let flags = 0, payload = bytes;
     try {
       const z = await gzip(bytes);
       if (z.length < bytes.length * 0.95) { payload = z; flags |= 1; }
     } catch (e) { /* no CompressionStream here: send raw */ }
+    if (opts && opts.passphrase) {
+      payload = await encrypt(payload, opts.passphrase);
+      flags |= 2;
+    }
     const windows = Fountain.makeWindows(payload);
     return {
       name, flags, payload,
@@ -291,15 +331,24 @@
       if (this.cb.onComplete) this.cb.onComplete(this.result);
     }
 
-    // Final bytes, decompressed if the sender compressed. Async.
-    async file() {
+    // True when the completed transfer needs a passphrase to open.
+    needsPassphrase() { return !!(this.result && (this.result.manifest.flags & 2)); }
+
+    // Final bytes: decrypted if the sender encrypted (throws on a wrong
+    // passphrase - GCM authenticates), decompressed if compressed. Async.
+    async file(opts) {
       if (!this.result || !this.result.crcOk) return null;
-      const bytes = (this.result.manifest.flags & 1) ? await gunzip(this.result.payload) : this.result.payload;
+      let bytes = this.result.payload;
+      if (this.result.manifest.flags & 2) {
+        if (!opts || !opts.passphrase) { const e = new Error('passphrase required'); e.needsPassphrase = true; throw e; }
+        bytes = await decrypt(bytes, opts.passphrase);
+      }
+      if (this.result.manifest.flags & 1) bytes = await gunzip(bytes);
       return { name: this.result.manifest.name, bytes };
     }
   }
 
-  const Air = { FS, SYM_COUNT, FRAME_BYTES, DROPLETS_PER_FRAME, GUARD, GAP, PROFILE, prepare, Sender, Receiver, packManifest, parseManifest, gzip, gunzip };
+  const Air = { FS, SYM_COUNT, FRAME_BYTES, DROPLETS_PER_FRAME, GUARD, GAP, PROFILE, prepare, Sender, Receiver, packManifest, parseManifest, gzip, gunzip, encrypt, decrypt };
   root.Air = Air;
   if (typeof module !== 'undefined' && module.exports) module.exports = Air;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -98,3 +98,22 @@ test('one megabyte through 30 percent loss, byte-perfect', { skip: !process.env.
   console.log(`      1 MB: ${t.sent} frames sent, ${t.delivered} heard, ` +
     `${(t.sent * (48000 * 0.05 + 75 * 1280 + 720) / 48000 / 60).toFixed(1)} min of air`);
 });
+
+test('a passphrase encrypts, authenticates, and refuses the wrong guess', async () => {
+  const text = 'meet me at the usual place at nine. '.repeat(300);
+  const bytes = new TextEncoder().encode(text);
+  const r = ch.rng(20);
+  const prep = await Air.prepare(bytes, 'secret.txt', { passphrase: 'olive-tree-42' });
+  assert.strictEqual(prep.flags & 2, 2);
+  assert.strictEqual(prep.flags & 1, 1, 'compression should happen before encryption');
+  const tx = new Air.Sender(prep, { session: 3, papr: false });
+  const rx = new Air.Receiver(FS);
+  let sent = 0;
+  while (!rx.result && sent < 60) { rx.push(ch.noise(800, 1e-4, r)); rx.push(tx.nextFrame()); sent++; }
+  assert.ok(rx.result && rx.result.crcOk, 'transfer incomplete');
+  assert.strictEqual(rx.needsPassphrase(), true);
+  await assert.rejects(() => rx.file(), (e) => e.needsPassphrase === true);
+  await assert.rejects(() => rx.file({ passphrase: 'wrong-guess' }), /wrong passphrase/);
+  const file = await rx.file({ passphrase: 'olive-tree-42' });
+  assert.strictEqual(Buffer.compare(Buffer.from(file.bytes), Buffer.from(bytes)), 0);
+});

@@ -20,6 +20,8 @@ jobs:
           CHROME: ${{ steps.chrome.outputs.chrome-path }}
       - name: channel evaluation
         run: node tools/eval.js
+      - name: OFDM end-to-end evaluation
+        run: node tools/eval-ofdm.js --bytes 8000
       - name: browser end-to-end
         run: node tools/browser-e2e.js robust --wav && node tools/browser-e2e.js fast --wav
         env:

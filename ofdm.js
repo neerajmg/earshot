@@ -251,10 +251,16 @@
         noiseCount++;
       }
 
-      // equalize data bins: undo channel, common phase, slope, gain
+      // equalize data bins: undo channel, common phase, slope, gain.
+      // Equalization uses the smoothed estimate (phase stability); the LLR
+      // weight uses the RAW per-bin power - smoothing leaks energy into
+      // comb notches, and weighting by the smoothed magnitude hands
+      // confident garbage to the decoder exactly where the channel died.
       const eq = [];
       for (const b of P.data) {
         const y = Y.get(b), h = H.get(b);
+        const hraw = Hraw.get(b);
+        const hhRaw = hraw[0] * hraw[0] + hraw[1] * hraw[1];
         const hh = h[0] * h[0] + h[1] * h[1];
         const ph = commonPh + slope * (b - mid);
         const c = Math.cos(ph), sn = Math.sin(ph);
@@ -262,7 +268,7 @@
         const yr = y[0] * c + y[1] * sn, yi = y[1] * c - y[0] * sn;
         const zr = (yr * h[0] + yi * h[1]) / (hh * gain + 1e-20);
         const zi = (yi * h[0] - yr * h[1]) / (hh * gain + 1e-20);
-        eq.push([zr, zi, hh]);                        // hh: for LLR weighting later
+        eq.push([zr, zi, Math.min(hh, hhRaw)]);       // weight: worst of raw and smoothed power
       }
       symbols.push({ eq, commonPh, slope, gain });
     }
