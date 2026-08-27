@@ -194,21 +194,30 @@
       const off = start + (s + 1) * P.symbolLen + win;
       const Y = binsAt(off);
 
-      // pilots: common phase + gain, and a timing-drift slope across bins
-      let pr = 0, pi = 0, slopeNum = 0, slopeDen = 0;
+      // Pilots: common phase + gain + a timing-drift slope across bins.
+      // Everything is measured against the g-h tracker's PREDICTION: under
+      // clock offset the true slope grows without bound, and edge pilots
+      // eventually sit more than pi away from the common phase - raw
+      // residuals then wrap, the fit aliases, and the tracker collapses
+      // (observed as accuracy decaying to coin-flip along the frame). The
+      // innovation against a prediction stays tiny forever.
+      const mid = (P.binLo + P.binHi) / 2;
+      const slopePred = s === 0 ? 0 : slopeEst + slopeRate;
+      let pr = 0, pi = 0;
       const pilotPh = [];
       P.pilots.forEach((b, i) => {
         const y = Y.get(b), h = H.get(b), v = PILOT_VAL[i];
-        // expected = H * pilot; rotate measured against expectation
-        const er = h[0] * v[0] - h[1] * v[1], ei = h[0] * v[1] + h[1] * v[0];
+        // expected = H * pilot, advanced by the predicted per-bin ramp
+        const th = slopePred * (b - mid);
+        const c = Math.cos(th), sn = Math.sin(th);
+        const e0r = h[0] * v[0] - h[1] * v[1], e0i = h[0] * v[1] + h[1] * v[0];
+        const er = e0r * c - e0i * sn, ei = e0r * sn + e0i * c;
         const rr = y[0] * er + y[1] * ei, ri = y[1] * er - y[0] * ei;
         pr += rr; pi += ri;
         pilotPh.push([b, Math.atan2(ri, rr)]);
       });
       const commonPh = Math.atan2(pi, pr);
-      // unwrapped-ish linear fit of residual phase vs bin for timing drift
       let num = 0, den = 0;
-      const mid = (P.binLo + P.binHi) / 2;
       for (const [b, ph] of pilotPh) {
         let d = ph - commonPh;
         while (d > Math.PI) d -= TWO_PI;
@@ -216,13 +225,11 @@
         num += (b - mid) * d;
         den += (b - mid) * (b - mid);
       }
-      const slopeRaw = den ? num / den : 0;          // rad per bin
-      if (s === 0) { slopeEst = slopeRaw; slopeRate = 0; }
+      const innovation = den ? num / den : 0;        // rad/bin beyond the prediction
+      if (s === 0) { slopeEst = innovation; slopeRate = 0; }
       else {
-        const pred = slopeEst + slopeRate;
-        const resid = slopeRaw - pred;
-        slopeEst = pred + 0.4 * resid;
-        slopeRate += 0.1 * resid;
+        slopeEst = slopePred + 0.4 * innovation;
+        slopeRate += 0.1 * innovation;
       }
       const slope = slopeEst;
 
