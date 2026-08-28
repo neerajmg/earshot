@@ -9,6 +9,8 @@ const os = require('os');
 const path = require('path');
 const { stage, checkDir, referencesIn } = require('../tools/stage-site.js');
 
+const root = path.resolve(__dirname, '..');
+
 test('the staged site has every file the pages reference', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'site-'));
   try {
@@ -39,4 +41,23 @@ test('the reference scanner reads script tags, importScripts, worklets and worke
   assert.deepStrictEqual(referencesIn('worker.js', "importScripts('m.js', 'n.js');"), ['m.js', 'n.js']);
   assert.deepStrictEqual(referencesIn('checks/soak.html', "ctx.audioWorklet.addModule('../capture-worklet.js')"), ['capture-worklet.js']);
   assert.deepStrictEqual(referencesIn('earshot.js', "new Worker('worker.js')"), ['worker.js']);
+});
+
+test('staging into a directory inside the repository terminates', () => {
+  // The deploy stages into ./site, which lives in the repository the walk is
+  // reading. Without excluding the destination this recursed until the path
+  // was too long for the filesystem, and only the deploy ever saw it.
+  const dest = path.join(root, 'site-selftest-tmp');
+  try {
+    const r = stage(dest);
+    assert.ok(r.files.length > 5, 'staged ' + r.files.length + ' files');
+    assert.ok(!r.files.some((f) => f.startsWith('site-selftest-tmp')), 'staged its own output: ' + r.files.filter((f) => f.startsWith('site-selftest-tmp')).slice(0, 3));
+    assert.deepStrictEqual(r.problems, []);
+  } finally {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+});
+
+test('staging over the repository root is refused', () => {
+  assert.throws(() => stage(root), /refusing/);
 });

@@ -20,14 +20,18 @@ const root = path.resolve(__dirname, '..');
 const SKIP = new Set(['.github', '.claude', 'docs', 'test', 'tools', 'node_modules',
   'package.json', 'package-lock.json', 'eval-results.md', 'eval-ofdm.md', 'CLAUDE.md']);
 
-function copyTree(src, dest, rel) {
+function copyTree(src, dest, rel, exclude) {
   fs.mkdirSync(dest, { recursive: true });
   const out = [];
   for (const name of fs.readdirSync(src)) {
     if (name.startsWith('.') || SKIP.has(rel ? rel + '/' + name : name)) continue;
     const from = path.join(src, name), to = path.join(dest, name);
+    // The staging directory is usually inside the repository (the deploy
+    // stages into ./site), so without this the walk copies its own output
+    // into itself until the path is too long for the filesystem.
+    if (exclude && path.resolve(from) === exclude) continue;
     const r = rel ? rel + '/' + name : name;
-    if (fs.statSync(from).isDirectory()) out.push(...copyTree(from, to, r));
+    if (fs.statSync(from).isDirectory()) out.push(...copyTree(from, to, r, exclude));
     else { fs.copyFileSync(from, to); out.push(r); }
   }
   return out;
@@ -89,10 +93,12 @@ function checkDir(dir) {
 
 // Copies the tree into dest, then checks it.
 function stage(dest) {
-  fs.rmSync(dest, { recursive: true, force: true });
-  copyTree(root, dest, '');
-  fs.writeFileSync(path.join(dest, '.nojekyll'), '');
-  return Object.assign({ dest }, checkDir(dest));
+  const abs = path.resolve(dest);
+  if (abs === root) throw new Error('refusing to stage the repository over itself');
+  fs.rmSync(abs, { recursive: true, force: true });
+  copyTree(root, abs, '', abs);
+  fs.writeFileSync(path.join(abs, '.nojekyll'), '');
+  return Object.assign({ dest: abs }, checkDir(abs));
 }
 
 module.exports = { stage, checkDir, referencesIn, SKIP };
