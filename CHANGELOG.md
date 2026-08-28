@@ -15,6 +15,60 @@ between two physical devices. Everything below it is gated and green.
   text** to send a typed message (shown on the receiver's screen), and a
   **Speed and limits** table computed from the frame format.
 
+## 0.9.1 — 2026-08-29
+
+A pre-release audit — code, usability, and an end-to-end functional run — found
+two receiver states a noisy room could reach and only a page reload could clear.
+Those, and everything else it turned up, are fixed. `docs/experiments/qa-2026-08-28.md`
+records what the audit found; each defect now has a named regression test.
+
+Nothing about the modulation changed. The frame format did, so this release does
+not interoperate with 0.9.0: the manifest magic is now `Eb`, and a droplet
+carries a CRC-32 instead of a CRC-16.
+
+Receiving
+- A file that finishes with a bad CRC-32 no longer ends the transfer. The
+  receiver keeps listening and says the file arrived damaged, where before it
+  claimed success, stopped the microphone, and then refused to hand the file
+  over.
+- A droplet whose payload is corrupt but whose checksum happened to match used
+  to weld a wrong answer into a window that no later droplet could lift out.
+  The CRC-32 trailer makes that about 65,000 times rarer, and a poisoned window
+  is now rebuilt rather than held forever.
+- A manifest that does not add up is dropped instead of throwing out of the
+  worker and killing every later frame with it.
+- Two senders in one room no longer starve each other: the receiver latches the
+  session it is following.
+- Pressing Listen after a completed transfer starts a fresh one.
+
+Sending
+- Files just over a 64 kB boundary took about twice the airtime the page
+  promised, because every fountain window was fed equally regardless of how many
+  blocks it held. Windows are now served in proportion: 65,537 bytes went from
+  171 frames to 86.
+- The time estimate is quoted after compression, so a text file is no longer
+  promised three times the sound it needs.
+
+Passphrases
+- The sender trimmed the passphrase and the receiver did not, so a trailing
+  space — which phone keyboards add — locked the file. Neither side alters it
+  now.
+- The file name is encrypted with the contents. The size still is not, and the
+  README says so.
+- 600,000 PBKDF2 iterations, up from 210,000.
+- A passphrase of only spaces is refused rather than silently sending in clear.
+
+The page
+- Says what the two devices do, and puts Receive first on a phone, where it used
+  to start below the fold.
+- The file picker is reachable by keyboard.
+- Progress sits under the button that started it; the status no longer reads
+  "about 0 s left" under a full bar.
+- The receiver distinguishes silence from sound it cannot read.
+- Microphone failures explain themselves instead of quoting the browser.
+- Sending and listening at once on one device is refused; it decoded its own
+  speaker and looked like it had worked.
+
 ## 0.9.0 — 2026-08-27
 
 The OFDM engine, end to end, and the product page.

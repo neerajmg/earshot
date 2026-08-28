@@ -111,3 +111,46 @@ test('fracDelay shifts phase by exactly the requested amount', () => {
   const wrap = (v) => Math.atan2(Math.sin(v), Math.cos(v));
   assert.ok(Math.abs(wrap(measured - expected)) < 0.01, `phase ${measured} vs ${expected}`);
 });
+
+// A capture arriving in chunks used to be resampled one chunk at a time, so
+// the filter kernel was truncated at both ends of every chunk and a fraction
+// of a sample was lost at each boundary. FFT.Resampler carries the phase and
+// the tail across calls; these pin that down.
+test('a stream resampled in chunks matches the whole stream, sample for sample', () => {
+  const x = tone(48000, 48000, 3000, 0.7);
+  for (const [fsIn, fsOut] of [[48000, 44100], [44100, 48000], [22050, 48000], [48000, 16000]]) {
+    const whole = FFT.sincResample(x, fsIn, fsOut);
+    for (const sizes of [[4096], [128], [1, 127, 4096, 333, 7]]) {
+      const r = new FFT.Resampler(fsIn, fsOut);
+      const parts = [];
+      let pos = 0, k = 0;
+      while (pos < x.length) { const n = sizes[k++ % sizes.length]; parts.push(r.process(x.subarray(pos, Math.min(x.length, pos + n)))); pos += n; }
+      parts.push(r.flush());
+      let total = 0;
+      for (const p of parts) total += p.length;
+      const cat = new Float32Array(total);
+      let off = 0;
+      for (const p of parts) { cat.set(p, off); off += p.length; }
+      assert.strictEqual(cat.length, whole.length, `${fsIn}->${fsOut} in ${sizes.join('/')}: length`);
+      for (let i = 0; i < cat.length; i++) {
+        assert.strictEqual(cat[i], whole[i], `${fsIn}->${fsOut} in ${sizes.join('/')}: sample ${i}`);
+      }
+    }
+  }
+});
+
+test('the resampler holds the band flat and its output rate exact across chunks', () => {
+  const r = new FFT.Resampler(44100, 48000);
+  const x = tone(44100 * 2, 44100, 7000, 0.5);   // 2 s at 44.1 kHz
+  const parts = [];
+  for (let o = 0; o < x.length; o += 4096) parts.push(r.process(x.subarray(o, Math.min(x.length, o + 4096))));
+  let n = 0;
+  for (const p of parts) n += p.length;
+  const y = new Float32Array(n);
+  let off = 0;
+  for (const p of parts) { y.set(p, off); off += p.length; }
+  // 2 s in is 2 s out, to within the kernel's half-width still being held back
+  assert.ok(Math.abs(n - 96000) <= 32, 'produced ' + n + ' samples for 2 s at 48 kHz');
+  const p = goertzelPower(y, 48000, 7000, 2000, y.length - 2000);
+  assert.ok(Math.abs(Math.sqrt(p) - 0.5) / 0.5 < 0.01, 'amplitude ' + Math.sqrt(p));
+});

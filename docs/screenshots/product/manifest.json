@@ -1,7 +1,7 @@
 {
   "target": "product",
   "page": "index.html",
-  "sourceHash": "bef91338ba1904d1",
+  "sourceHash": "a84ec2160053f602",
   "sources": [
     "index.html",
     "earshot.js",
@@ -43,7 +43,7 @@
   "sample": {
     "name": "readings.csv",
     "bytes": 14149,
-    "onAir": 3329,
+    "onAir": 3346,
     "frames": 7
   },
   "message": {
@@ -53,8 +53,8 @@
   },
   "noisy": {
     "snrDb": -2,
-    "droplets": 17,
-    "dropletCrcFail": 28,
-    "complete": true
+    "droplets": 12,
+    "dropletCrcFail": 33,
+    "complete": false
   }
 }

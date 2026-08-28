@@ -14,105 +14,148 @@
   :root { --bg:#101418; --card:#1a2026; --fg:#e8e4dc; --muted:#8b949e; --accent:#4cc2ff; --ok:#57c774; --bad:#ef6a5a; --line:#2c343c; }
   * { box-sizing: border-box; }
   body { margin:0; font: 16px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
-  header { padding: 28px 20px 8px; text-align:center; }
+  header { padding: 28px 20px 4px; text-align:center; }
   header h1 { margin:0; font-size: 34px; letter-spacing: -0.5px; }
-  header p { margin: 6px 0 0; color: var(--muted); }
-  main { max-width: 900px; margin: 0 auto; padding: 20px; display:grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  header p { margin: 6px auto 0; color: var(--muted); max-width: 620px; }
+  header p.lede { color: var(--fg); margin-top: 12px; }
+  header p.lede b { font-weight: 600; }
+  main { max-width: 900px; margin: 0 auto; padding: 20px; display:grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items:start; }
   @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; min-width:0; }
   .card h2 { margin: 0 0 12px; font-size: 20px; }
-  .drop { display:block; border: 2px dashed var(--line); border-radius: 12px; padding: 26px 14px; text-align:center; color: var(--muted); cursor:pointer; transition: border-color .15s; }
+  .drop { display:block; position:relative; border: 2px dashed var(--line); border-radius: 12px; padding: 26px 14px; text-align:center; color: var(--muted); cursor:pointer; transition: border-color .15s; }
   .drop.hover { border-color: var(--accent); color: var(--fg); }
-  .drop input { display:none; }
-  button { font: inherit; background:#24435a; color:var(--fg); border:1px solid #3f6c8c; border-radius:10px; padding:12px 18px; cursor:pointer; }
+  .drop:focus-within { border-color: var(--accent); color: var(--fg); outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Visually hidden, still focusable: the file input is the only way to pick a
+     file, so it has to be reachable by keyboard and by a switch. */
+  .drop input { position:absolute; width:1px; height:1px; padding:0; margin:-1px; border:0; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; }
+  /* "drag it here" only means something with a mouse. */
+  .dragHint { display:none; }
+  @media (hover: hover) and (pointer: fine) { .dragHint { display:inline; } }
+  button { font: inherit; background:#24435a; color:var(--fg); border:1px solid #3f6c8c; border-radius:10px; padding:12px 18px; min-height:44px; cursor:pointer; }
   button.big { width:100%; font-size:18px; padding:14px; }
-  button.small { font-size:13px; padding:5px 9px; border-radius:7px; }
-  button:disabled { opacity:.4; cursor:default; }
+  button.small { font-size:14px; padding:9px 14px; border-radius:8px; }
+  /* Not opacity: a faded button reads as a rendering fault. Flat and cool, but
+     the words stay legible (6.1:1). */
+  button:disabled { opacity:1; background:#1b2632; color:#9aa4b0; border-color:#39424c; cursor:default; }
   button.stop { background:#5a2424; border-color:#8c3f3f; }
+  a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:12px 0 0; }
   .hint { color: var(--muted); font-size: 14px; }
+  p.hint { margin: 8px 0 0; }
+  .fieldLabel { display:block; margin: 16px 0 6px; font-size: 14px; color: var(--fg); }
   .fileinfo { margin: 12px 0 0; font-size: 15px; }
-  input[type=password], input[type=text], textarea { font:inherit; background:#12171c; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:9px 10px; width:100%; resize: vertical; }
-  .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; margin:16px 0 4px; }
+  input[type=password], input[type=text], textarea { font:inherit; background:#12171c; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; width:100%; resize: vertical; }
+  .row input[type=password] { flex:1 1 150px; width:auto; min-width:0; }
+  @media (max-width: 760px) { textarea { resize: none; } }
+  .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; margin:22px 0 8px; }
   .or::before, .or::after { content:""; flex:1; border-top:1px solid var(--line); }
-  .speed { margin-top:14px; color: var(--muted); font-size: 14px; }
-  .speed table { border-collapse: collapse; margin-top: 8px; width: 100%; }
-  .speed th, .speed td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); }
+  .speed { margin-top:18px; color: var(--muted); font-size: 14px; }
+  .speed table { border-collapse: collapse; margin-top: 10px; width: 100%; }
+  .speed th, .speed td { text-align: left; padding: 9px 10px 9px 0; border-bottom: 1px solid var(--line); }
+  .speed td:last-child, .speed th:last-child { text-align: right; padding-right: 0; }
+  #resultName { font-size:17px; font-weight:600; }
   #resultText { background:#12171c; border-radius:8px; padding:10px; white-space:pre-wrap; word-break:break-word; margin:10px 0 0; max-height: 220px; overflow:auto; font: 14px/1.4 ui-monospace, Menlo, monospace; }
   progress { width:100%; height:12px; margin-top:12px; accent-color: var(--accent); }
   .status { margin-top:10px; font-size:14px; color:var(--muted); min-height: 1.4em; }
   .result { margin-top: 12px; padding: 12px; border:1px solid var(--line); border-radius:10px; display:none; }
   .result.show { display:block; }
   .ok { color: var(--ok); } .bad { color: var(--bad); }
+  /* Shown only while this device is playing a file; earshot.js puts the
+     class on <body> when a send starts and takes it off when it stops. */
+  #sendingHint { display:none; }
+  body.sending #sendingHint { display:block; }
+  .drop.busy { opacity:.5; pointer-events:none; }
   details { max-width: 900px; margin: 6px auto 30px; padding: 0 20px; color: var(--muted); }
   details canvas { display:block; width:100%; background:#000; border-radius:8px; margin-top:10px; }
   .log { margin-top:10px; height:150px; overflow:auto; background:#000; border-radius:8px; font: 12px/1.4 ui-monospace, Menlo, monospace; padding:8px; white-space:pre-wrap; }
   details a { color: var(--accent); }
-  footer { text-align:center; color:var(--muted); font-size: 13px; padding: 0 20px 30px; }
+  footer { text-align:center; color:var(--muted); font-size: 14px; padding: 0 20px 30px; }
   footer a { color: var(--accent); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>🔊 earshot</h1>
+  <h1><span aria-hidden="true">🔊</span> earshot</h1>
   <p>Send a file to the device next to you — with sound. No install, no network, no pairing.</p>
+  <p class="lede">Two devices, both on this page: press <b>Listen</b> on the one receiving,
+  then pick a file and press <b>Start sending</b> on the other.</p>
 </header>
 
 <main>
-  <section class="card" id="sendCard">
-    <h2>Send</h2>
-    <label class="drop" id="drop">
-      <input type="file" id="file">
-      <div id="dropText">Choose a file<br><span class="hint">or drop it here</span></div>
-    </label>
-    <div class="row" style="justify-content:space-between">
-      <span class="hint">Up to 2 MB. Text compresses; photos don't.</span>
-      <button class="small" id="sample">Use the sample file</button>
-    </div>
-    <div class="fileinfo" id="fileInfo"></div>
-    <div class="row"><input type="password" id="txPass" placeholder="Passphrase for this file (optional) — anyone in earshot can receive without one" autocomplete="off"></div>
+  <section class="card" id="recvCard" aria-labelledby="recvHead">
+    <h2 id="recvHead">Receive</h2>
+    <p class="hint">Press Listen and allow the microphone when the browser asks, then start the
+    sender on the other device. Keep this page in front, the screen awake, and both devices still
+    and close together.</p>
     <div class="row">
-      <button class="big" id="send" disabled>Start sending</button>
-      <button class="big stop" id="stopSend" style="display:none">Stop</button>
-    </div>
-    <div class="or"><span>or send a message</span></div>
-    <div class="row"><textarea id="txText" rows="3" placeholder="Type a short message to send as sound (sent without a passphrase)"></textarea></div>
-    <div class="row"><button class="big" id="sendText">Send text</button></div>
-    <progress id="txProgress" value="0" max="1" style="display:none"></progress>
-    <div class="status" id="txStatus"></div>
-    <details class="speed">
-      <summary>Speed and limits</summary>
-      <table id="benchmarks">
-        <thead><tr><th>size</th><th>frames</th><th>about</th></tr></thead>
-        <tbody></tbody>
-      </table>
-      <p class="hint">Computed from the frame format: 768 bytes of your file per 2.07 s frame
-      (three 256-byte droplets; the rest of the frame is coding and the manifest), plus two
-      spare frames. Measured in the test channel: 350–500 B/s. A lossy room needs a few extra
-      frames, which the sender keeps producing until you stop it. Maximum 2 MB — above that,
-      sound is the wrong tool.</p>
-    </details>
-  </section>
-
-  <section class="card" id="recvCard">
-    <h2>Receive</h2>
-    <p class="hint">Press listen, then start the sender on the other device. Keep both still and this page in front.</p>
-    <div class="row">
-      <button class="big" id="listen">🎙 Listen</button>
+      <button class="big" id="listen"><span aria-hidden="true">🎙</span> Listen</button>
       <button class="big stop" id="stopListen" style="display:none">Stop listening</button>
     </div>
-    <progress id="rxProgress" value="0" max="1" style="display:none"></progress>
-    <div class="status" id="rxStatus"></div>
+    <progress id="rxProgress" value="0" max="1" style="display:none" aria-label="How much of the file has arrived"></progress>
+    <div class="status" id="rxStatus" role="status" aria-live="polite"></div>
     <div class="result" id="result">
       <div id="resultName"></div>
       <pre id="resultText" style="display:none"></pre>
-      <div class="row" id="passRow" style="display:none">
-        <input type="password" id="rxPass" placeholder="This file needs its passphrase" autocomplete="off">
-        <button id="unlock">Unlock</button>
+      <div id="passRow" style="display:none">
+        <label class="fieldLabel" for="rxPass">Passphrase from the sender</label>
+        <form class="row" onsubmit="return false">
+          <input type="password" id="rxPass" placeholder="Case-sensitive" autocomplete="off">
+          <button id="unlock">Unlock</button>
+        </form>
       </div>
       <div class="row"><button class="big" id="save" style="display:none">Save file</button></div>
-      <div class="status" id="resultStatus"></div>
+      <div class="status" id="resultStatus" role="status" aria-live="polite"></div>
     </div>
+  </section>
+
+  <section class="card" id="sendCard" aria-labelledby="sendHead">
+    <h2 id="sendHead">Send</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file">
+      <div id="dropText">Choose a file<br><span class="hint dragHint" aria-hidden="true">or drag one here</span></div>
+    </label>
+    <div class="fileinfo" id="fileInfo"></div>
+    <p class="hint">Up to 2 MB. Text and documents go faster than photos of the same size.</p>
+    <p class="hint">No file handy? The sample is a few lines of text, under ten seconds of sound.</p>
+    <div class="row"><button class="small" id="sample">Use the sample file</button></div>
+
+    <label class="fieldLabel" for="txPass">Passphrase (optional)</label>
+    <form onsubmit="return false"><input type="password" id="txPass" placeholder="Leave empty to send in the clear" autocomplete="off"></form>
+    <div class="status" id="txPassNote" style="min-height:0"></div>
+    <p class="hint">Sound is a broadcast. Without a passphrase, any device in earshot with this page
+    open receives the file. Tell the other person the passphrase some other way.</p>
+
+    <div class="row">
+      <button class="big" id="send" disabled>Start sending</button>
+      <button class="big stop" id="stopSend" style="display:none">Stop sending</button>
+    </div>
+    <progress id="txProgress" value="0" max="1" style="display:none" aria-label="How much of the file has been played"></progress>
+    <div class="status" id="txStatus" role="status" aria-live="polite"></div>
+    <p class="hint" id="sendingHint">This device keeps playing until you press Stop sending: it
+    cannot hear whether the other one has the file, and extra repeats only help. Expect a short
+    rising sweep, then two seconds of hiss, over and over. Volume around half — a distorted
+    speaker carries less than a quiet one.</p>
+
+    <label class="or" for="txText"><span>or type a message</span></label>
+    <textarea id="txText" rows="3" placeholder="A few words"></textarea>
+    <p class="hint">A message goes out without a passphrase, so anyone in earshot can read it. Put
+    anything private in a file instead.</p>
+    <div class="row"><button class="big" id="sendText">Send message</button></div>
+
+    <details class="speed">
+      <summary>Speed and limits</summary>
+      <table id="benchmarks">
+        <thead><tr><th>file size</th><th>how long</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="hint">Sound carries about 370 bytes a second, so a short note takes seconds and the
+      2 MB maximum takes over an hour. Text usually compresses two or three times on the way out and
+      finishes sooner; photos and archives do not. A noisy room needs a few extra repeats, which is
+      why the sender keeps playing until you stop it. Anything over 2 MB is refused: at this speed it
+      would take hours.</p>
+    </details>
   </section>
 </main>
 
@@ -126,9 +169,8 @@
 </details>
 
 <footer>
-  Free and open source — <a href="https://github.com/neerajmg/earshot">github.com/neerajmg/earshot</a> · <a href="https://github.com/neerajmg/earshot/blob/main/docs/GUIDE.md">user guide</a>.
-  Sound is a broadcast: anyone within earshot running this page can receive what you send.
-  Use a passphrase when that matters.
+  Free and open source: <a href="https://github.com/neerajmg/earshot">the source on GitHub</a>
+  and <a href="https://github.com/neerajmg/earshot/blob/main/docs/GUIDE.md">the user guide</a>.
 </footer>
 
 <script src="modem.js"></script>

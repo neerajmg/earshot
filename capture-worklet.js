@@ -1,8 +1,8 @@
 // capture-worklet.js -- microphone capture off the main thread.
 //
 // Accumulates 128-sample quanta into 4096-sample chunks and posts each with
-// a running quantum count, so the page can spot dropped audio. The product
-// twin of checks/capture-worklet.js, which the soak test validated.
+// a running quantum count, so the page can spot dropped audio. checks/soak.html
+// loads this same file: a second copy under checks/ would drift from it.
 class Capture extends AudioWorkletProcessor {
   constructor() {
     super();

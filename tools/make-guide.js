@@ -107,7 +107,7 @@ function productFrameSec() {
 function productBlocks() {
   const frameSec = productFrameSec();
   const perFrame = Fountain.BLOCK * Air.DROPLETS_PER_FRAME;
-  const frames = (bytes) => Math.ceil(Math.ceil(bytes / Fountain.BLOCK) / Air.DROPLETS_PER_FRAME) + 2;   // what the sender's progress bar counts to
+  const frames = Air.framesFor;                       // what the sender's progress bar counts to
   const rows = ['| file | frames | sound |', '|---|---:|---:|'];
   for (const [label, bytes] of [['a note, a key, a config', 2048], ['a small document', 30 * 1024], ['a photo', 300 * 1024], ['the 2 MB ceiling', 2 * 1048576]]) {
     rows.push(`| ${label} (${fmtBytes(bytes)}) | ${frames(bytes)} | ${fmtTime(frames(bytes) * frameSec)} |`);
@@ -117,14 +117,14 @@ function productBlocks() {
   const timing = rows.join('\n');
 
   const cap = Number(grab('earshot.js', /(?:MAX_BYTES = |f\.size > )(\d+) \* 1048576/, 'the file size cap')[1]);
-  const nameBytes = Number(grab('air.js', /encode\(m\.name \|\| 'file'\)\.subarray\(0, (\d+)\)/, 'the file name limit')[1]);
+  const nameBytes = Number(grab('air.js', /NAME_BYTES = (\d+)/, 'the file name limit')[1]);
   const gzipGain = Number(grab('air.js', /z\.length < bytes\.length \* ([\d.]+)/, 'the compression rule')[1]);
   const iters = Number(grab('air.js', /PBKDF2_ITERS = (\d+)/, 'PBKDF2_ITERS')[1]);
   const keyBits = Number(grab('air.js', /name: 'AES-GCM', length: (\d+)/, 'the AES key length')[1]);
   const logLines = Number(grab('earshot.js', /new Diag\.Log\(ui\.log, (\d+)\)/, 'the log length')[1]);
   const limits = [
     `- Files up to ${cap} MB (${(cap * 1048576).toLocaleString('en-US')} bytes). Bigger ones are refused before anything plays.`,
-    `- File names travel as up to ${nameBytes} bytes of UTF-8; longer names arrive cut short.`,
+    `- File names travel as up to ${nameBytes} bytes of UTF-8; a longer name is trimmed to fit, on a character boundary and keeping its extension. With a passphrase the name travels inside the ciphertext, under the same limit.`,
     `- Compression is gzip, used only when it saves at least ${Math.round((1 - gzipGain) * 100)} %; the log line under **Advanced** shows the size before and after.`,
     `- Passphrase: AES-${keyBits}-GCM, key derived from the passphrase with PBKDF2-SHA-256 over ${iters.toLocaleString('en-US')} iterations, fresh salt and nonce per transfer. A wrong passphrase is detected, not silently decrypted to garbage.`,
     `- Audio runs at ${Air.FS} Hz. A device that cannot is resampled, and **Advanced** says so.`,
@@ -133,7 +133,7 @@ function productBlocks() {
 
   const chirp = grab('chirp.js', /f0: (\d+), f1: (\d+), durSec: ([\d.]+)/, 'the chirp parameters');
   const manifestBytes = Number(grab('air.js', /MANIFEST_BYTES = (\d+)/, 'MANIFEST_BYTES')[1]);
-  const dropletBytes = 2 + 4 + Fountain.BLOCK + 2;
+  const dropletBytes = Air.DROPLET_BYTES;
   const binHz = Air.FS / Ofdm.P.N;
   const engine = [
     `- ${Ofdm.P.N}-point FFT at ${Air.FS} Hz: subcarriers ${binHz} Hz apart, bins ${Ofdm.P.binLo} to ${Ofdm.P.binHi} (${Ofdm.P.binLo * binHz} to ${Math.round(Ofdm.P.binHi * binHz)} Hz). ${Ofdm.P.data.length} carry data as QPSK, ${Ofdm.P.pilots.length} are pilots that track the two devices' clocks, ${Ofdm.P.nulls.length} stay silent so the noise floor is measured every symbol.`,
@@ -455,7 +455,7 @@ async function captureProduct(t, work, port, shots) {
   console.log('product page, receiving (a fake microphone fed the rendered transfer in real time)');
   await withChrome({ url, ready: t.ready, shots, micWav }, async (cdp) => {
     await cdp.click('listen');
-    await cdp.until(`document.getElementById('rxStatus').textContent.startsWith('listening')`, 10, 'the microphone');
+    await cdp.until(`document.getElementById('rxStatus').textContent.toLowerCase().startsWith('listening')`, 10, 'the microphone');
     files.push(await cdp.shot('#recvCard', 'listening.png'));
     await cdp.until(`(() => { const p = document.getElementById('rxProgress'); return p.style.display !== 'none' && p.value >= 0.2 && p.value < 0.95; })()`, 60, 'the transfer to be part way');
     files.push(await cdp.shot('#recvCard', 'receiving.png'));
@@ -467,7 +467,7 @@ async function captureProduct(t, work, port, shots) {
     files.push(await cdp.shot('#recvCard', 'received-locked.png'));
     await cdp.eval(`document.getElementById('rxPass').value = 'wrong'; 1`);
     await cdp.click('unlock');
-    await cdp.until(`document.getElementById('resultStatus').textContent.startsWith('wrong passphrase')`, 10, 'the wrong-passphrase message');
+    await cdp.until(`document.getElementById('resultStatus').textContent.toLowerCase().startsWith('wrong passphrase')`, 10, 'the wrong-passphrase message');
     files.push(await cdp.shot('#recvCard', 'wrong-passphrase.png'));
     await cdp.eval(`document.getElementById('rxPass').value = ${JSON.stringify(sample.passphrase)}; 1`);
     await cdp.click('unlock');
@@ -482,7 +482,7 @@ async function captureProduct(t, work, port, shots) {
   console.log('product page, receiving a typed message');
   await withChrome({ url, ready: t.ready, shots, micWav: messageWav }, async (cdp) => {
     await cdp.click('listen');
-    await cdp.until(`document.getElementById('rxStatus').textContent.startsWith('listening')`, 10, 'the microphone');
+    await cdp.until(`document.getElementById('rxStatus').textContent.toLowerCase().startsWith('listening')`, 10, 'the microphone');
     await cdp.until('!!earshotDebug.fileBytes', 60, 'the message to arrive');
     await cdp.until(`document.getElementById('resultText').style.display !== 'none'`, 10, 'the message to show inline');
     files.push(await cdp.shot('#recvCard', 'received-text.png'));
@@ -494,8 +494,8 @@ async function captureProduct(t, work, port, shots) {
     console.log('product page, receiving through noise');
     await withChrome({ url, ready: t.ready, shots, micWav: noisyWav }, async (cdp) => {
       await cdp.click('listen');
-      await cdp.until(`document.getElementById('rxStatus').textContent.startsWith('listening')`, 10, 'the microphone');
-      await cdp.until(`/\\d+ droplets, [1-9]\\d* bad\\)/.test(document.getElementById('log').textContent) && document.getElementById('rxProgress').value > 0`, 75, null);
+      await cdp.until(`document.getElementById('rxStatus').textContent.toLowerCase().startsWith('listening')`, 10, 'the microphone');
+      await cdp.until(`/\\d+ droplets?, [1-9]\\d* rejected/.test(document.getElementById('log').textContent) && document.getElementById('rxProgress').value > 0`, 75, null);
       files.push(await cdp.shot('#recvCard', 'receiving-noisy.png'));
       await cdp.eval(`document.getElementById('advanced').open = true; 1`);
       await sleep(800);

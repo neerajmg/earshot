@@ -38,15 +38,16 @@ if (ofdm) {
       onFrame: (f) => {
         const m = f.manifest;
         console.log(`frame: droplets ${f.stats.droplets}, bad ${f.stats.dropletCrcFail}, sig fails ${f.stats.sigFail}` +
-          (m ? `, ${m.name} ${(f.progress * 100).toFixed(0)} %` : ', no manifest yet'));
+          (m ? `, ${m.name || (m.flags & Air.F_NAME_INSIDE ? '<name encrypted>' : '')} ${(f.progress * 100).toFixed(0)} %` : ', no manifest yet'));
       },
     });
     for (let off = 0; off < x.length; off += 4096) rx.push(x.subarray(off, Math.min(x.length, off + 4096)));
     console.log('stats:', JSON.stringify(rx.stats));
     if (!rx.result) { console.log('transfer incomplete'); process.exit(1); }
-    console.log(`complete: ${rx.result.manifest.name}, CRC ${rx.result.crcOk ? 'ok' : 'BAD'}` + (rx.needsPassphrase() ? ', encrypted' : ''));
+    console.log(`complete: ${rx.result.manifest.name || (rx.nameHidden() ? '<name encrypted>' : '<no name>')}, CRC ${rx.result.crcOk ? 'ok' : 'BAD'}` + (rx.needsPassphrase() ? ', encrypted' : ''));
     try {
       const f = await rx.file({ passphrase });
+      if (rx.nameHidden()) console.log('name: ' + f.name);
       if (outPath) { fs.writeFileSync(outPath, f.bytes); console.log('wrote ' + outPath + ' (' + f.bytes.length + ' bytes)'); }
       process.exit(0);
     } catch (e) {

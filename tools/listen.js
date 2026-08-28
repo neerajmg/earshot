@@ -63,13 +63,13 @@ function finish() {
         if (wav.fs !== Air.FS) x = FFT.sincResample(x, wav.fs, Air.FS);
         const arx = new Air.Receiver(Air.FS, {
           onFrame: (f) => console.log(`frame: droplets ${f.stats.droplets}, bad ${f.stats.dropletCrcFail}` +
-            (f.manifest ? `, ${f.manifest.name} ${(f.progress * 100).toFixed(0)} %` : ', no manifest yet')),
+            (f.manifest ? `, ${f.manifest.name || (f.manifest.flags & Air.F_NAME_INSIDE ? '<name encrypted>' : '')} ${(f.progress * 100).toFixed(0)} %` : ', no manifest yet')),
         });
         for (let o = 0; o < x.length; o += 4096) arx.push(x.subarray(o, Math.min(x.length, o + 4096)));
         console.log('stats:', JSON.stringify(arx.stats));
         if (keepPath) { fs.copyFileSync(rec, keepPath); console.log('recording kept as ' + keepPath); }
         if (!arx.result) { console.log('transfer incomplete'); fs.rmSync(work, { recursive: true, force: true }); process.exit(1); }
-        console.log(`complete: ${arx.result.manifest.name}, CRC ${arx.result.crcOk ? 'ok' : 'BAD'}` + (arx.needsPassphrase() ? ', encrypted' : ''));
+        console.log(`complete: ${arx.result.manifest.name || (arx.nameHidden() ? '<name encrypted>' : '<no name>')}, CRC ${arx.result.crcOk ? 'ok' : 'BAD'}` + (arx.needsPassphrase() ? ', encrypted' : ''));
         try {
           const f = await arx.file({ passphrase });
           const dest = outPath || f.name || 'received.bin';

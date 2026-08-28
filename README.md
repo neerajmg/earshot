@@ -33,8 +33,18 @@ archives don't. Both devices must sit still — a hand-held phone Doppler-shifts
 the signal — and quiet helps.
 
 **Privacy is physics here: sound is a broadcast.** Anyone within earshot running
-this same page receives what you send. The passphrase option (AES-256-GCM, key
-derived from what you type) is there for exactly that reason.
+this same page receives what you send. The passphrase option is there for
+exactly that reason: AES-256-GCM, the key derived from what you type with
+PBKDF2-SHA-256 over 600,000 iterations (the channel is recordable and a
+recording keeps forever, so the threat is offline guessing). The file name is
+encrypted with the contents — it rides inside the payload rather than in the
+manifest — and the passphrase is used exactly as typed on both sides, spaces
+and all.
+
+What a passphrase does **not** hide is the size: the receiver needs the
+payload's length to reassemble it, so that stays in the clear along with the
+fact that a transfer is happening and how long it takes. Pad the file if the
+size is the secret.
 
 ## How it works
 

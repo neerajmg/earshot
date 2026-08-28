@@ -63,7 +63,7 @@ document.getElementById('go').onclick = async () => {
   await ctx.resume();
   try { await navigator.wakeLock.request('screen'); } catch (e) { /* old browser */ }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
-  await ctx.audioWorklet.addModule('capture-worklet.js');
+  await ctx.audioWorklet.addModule('../capture-worklet.js');   // the one the product page uses; there is no second copy
   const src = ctx.createMediaStreamSource(stream);
   const node = new AudioWorkletNode(ctx, 'capture', { numberOfInputs: 1, numberOfOutputs: 1 });
   const mute = ctx.createGain(); mute.gain.value = 0;

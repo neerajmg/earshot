@@ -21,12 +21,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Copies the tree minus the development directories and then fails if
+      # anything the staged pages reference is missing, so a new module can
+      # never ship a broken page. The same staging runs in the browser
+      # end-to-end test, against the same files.
       - name: stage the static site
-        run: |
-          mkdir -p site
-          cp index.html lab.html earshot.js manifest.json icon.svg modem.js dsp.js diag.js app.js fft.js chirp.js ofdm.js fec.js fountain.js air.js worker.js capture-worklet.js site/
-          cp -r checks site/checks
-          touch site/.nojekyll
+        run: node tools/stage-site.js site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

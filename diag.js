@@ -58,6 +58,7 @@
       this.im = new Float32Array(this.N);
       this.buf = new Float32Array(this.N);
       this.filled = 0;
+      this.head = 0;                                 // buf[head] is the oldest of the last N samples
       this.pending = [];
       this.tones = [];
       this.fs = 48000;
@@ -69,7 +70,7 @@
     reset(fs) {
       this.fs = fs;
       this.hop = Math.round(fs / 50);
-      this.filled = 0; this.sinceCol = 0; this.pending = [];
+      this.filled = 0; this.head = 0; this.sinceCol = 0; this.pending = [];
       const { W, H } = fit(this.c);
       this.g.fillStyle = '#000'; this.g.fillRect(0, 0, W, H);
     }
@@ -79,9 +80,11 @@
     push(chunk) {
       const N = this.N;
       for (let i = 0; i < chunk.length; i++) {
-        // sliding window: keep the last N samples
+        // Sliding window of the last N samples, as a ring. Shifting the whole
+        // buffer down by one per sample was 1024 element moves 48 000 times a
+        // second; moving the head instead is one store.
         if (this.filled < N) this.buf[this.filled++] = chunk[i];
-        else { this.buf.copyWithin(0, 1); this.buf[N - 1] = chunk[i]; }
+        else { this.buf[this.head] = chunk[i]; this.head = this.head + 1 === N ? 0 : this.head + 1; }
         if (++this.sinceCol >= this.hop) {
           this.sinceCol = 0;
           if (this.filled === N) this.pending.push(this.column());
@@ -91,8 +94,8 @@
     }
 
     column() {
-      const N = this.N, re = this.re, im = this.im;
-      for (let i = 0; i < N; i++) { re[i] = this.buf[i] * this.win[i]; im[i] = 0; }
+      const N = this.N, re = this.re, im = this.im, head = this.head;
+      for (let i = 0; i < N; i++) { const j = head + i; re[i] = this.buf[j < N ? j : j - N] * this.win[i]; im[i] = 0; }
       this.fft(re, im);
       const bins = N / 2;
       const out = new Float32Array(bins);
