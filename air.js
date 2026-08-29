@@ -39,7 +39,13 @@
   const DROPLET_BYTES = 2 + 4 + Fountain.BLOCK + 4;  // 266: win, id, payload, CRC-32
   const DROPLETS_PER_FRAME = Math.floor((FRAME_BYTES - MANIFEST_BYTES) / DROPLET_BYTES);   // 3
   const NAME_BYTES = 64;                             // manifest name field
-  const MAX_PAYLOAD = 2 * 1048576 + 64;              // the page's 2 MB ceiling plus crypto overhead
+  // The page's 2 MB ceiling plus everything prepare() can add on top of it:
+  // the hidden-name wrapper (a length byte and up to NAME_BYTES of name) and
+  // the AES-GCM salt, nonce and tag. The old value was the ceiling plus a
+  // flat 64, which predated the name wrapper - a passphrase-protected file
+  // within a few dozen bytes of 2 MB with a long name built a manifest that
+  // every receiver then rejected, silently, on both sides.
+  const MAX_PAYLOAD = 2 * 1048576 + 1 + 64 + 16 + 12 + 16;
   const QUIET_SECONDS = 10;                          // silence after which another sender may take the room
   const PROFILE = 2;                                 // QPSK rate 1/2
   const ILV = Fec.interleaveMap(LANES);
@@ -276,6 +282,9 @@
     if (pass !== null) {
       payload = await encrypt(payload, pass);
       flags |= F_ENCRYPTED;
+    }
+    if (payload.length > MAX_PAYLOAD) {
+      throw new Error('too big to send: ' + payload.length + ' bytes on the air, limit ' + MAX_PAYLOAD);
     }
     const windows = Fountain.makeWindows(payload);
     return {
@@ -531,7 +540,6 @@
     _adopt(man, session) {
       if (!this.manifest || !sameManifest(this.manifest, man)) {
         this.decoders.clear();
-        this.result = null;
       }
       this.manifest = man;
       this.rival = null;
@@ -547,7 +555,11 @@
     }
 
     _checkComplete() {
-      if (this.result || !this.manifest) return;
+      if (!this.manifest) return;
+      // Keyed off the manifest the result belongs to, not merely "a result
+      // exists": another sender passing through re-adopts and would
+      // otherwise leave a finished transfer holding nothing.
+      if (this.result && sameManifest(this.result.manifest, this.manifest)) return;
       if (this.decoders.size < this.manifest.winCount) return;
       for (const dec of this.decoders.values()) if (!dec.isComplete()) return;
       const out = new Uint8Array(this.manifest.size);

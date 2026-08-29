@@ -128,3 +128,22 @@ test('M4: a passphrase keeps its spaces, at both ends', async () => {
   const file = await rx.file({ passphrase: pass });
   assert.strictEqual(Buffer.compare(Buffer.from(file.bytes), Buffer.from(bytes)), 0);
 });
+
+test('the payload ceiling leaves room for the hidden name and the crypto overhead', async () => {
+  // MAX_PAYLOAD once allowed the 2 MB ceiling plus a flat 64 bytes, which
+  // predated the name-in-payload wrapper. A passphrase-protected file near
+  // the ceiling with a long name then built a manifest every receiver
+  // rejected - silently, because the sender had no reason to look.
+  const name = 'a-fairly-long-file-name-for-the-ceiling.bin';
+  const worst = 1 + name.length + 16 + 12 + 16;               // wrapper + salt + nonce + tag
+  assert.ok(Air.MAX_PAYLOAD >= 2 * 1048576 + worst,
+    'ceiling ' + Air.MAX_PAYLOAD + ' leaves no room for ' + worst + ' bytes of overhead');
+
+  // and the real path agrees: incompressible bytes at the page's own cap
+  const r = ch.rng(77);
+  const bytes = new Uint8Array(2 * 1048576).map(() => r.int(256));
+  const prep = await Air.prepare(bytes, name, { passphrase: 'x' });
+  assert.ok(prep.payload.length <= Air.MAX_PAYLOAD,
+    'on-air payload ' + prep.payload.length + ' exceeds the ceiling ' + Air.MAX_PAYLOAD);
+  assert.ok(Air.parseManifest(prep.manifest), 'a receiver rejects the manifest for a file at the cap');
+});

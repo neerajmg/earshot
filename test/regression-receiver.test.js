@@ -281,3 +281,31 @@ test('the page 44.1 kHz path decodes: 48k on the air, 44.1k mic, 4096-sample chu
   assert.strictEqual(rx.stats.sigFail, 0, 'signalling failed on a clean 44.1 kHz capture');
   assert.strictEqual(Buffer.compare(Buffer.from(file.bytes), Buffer.from(bytes)), 0);
 });
+
+test('a rival sender passing through does not erase a finished transfer', async () => {
+  // The receiver used to treat `result` as a bare "finished" flag, so
+  // adopting any later manifest cleared it. A second sender in the room
+  // could therefore take a completed file away from a caller still holding
+  // the Receiver, which is what decode-wav and listen do: they print
+  // "CRC ok" and then report the transfer incomplete.
+  const r = ch.rng(4242);
+  const mine = new Uint8Array(4000).map(() => r.int(256));
+  const theirs = new Uint8Array(3000).map(() => r.int(256));
+  const mineSender = new Air.Sender(await Air.prepare(mine, 'mine.bin'), { session: 1, papr: false });
+  const rivalSender = new Air.Sender(await Air.prepare(theirs, 'theirs.bin'), { session: 9, papr: false });
+
+  const rx = new Air.Receiver(48000);
+  let n = 0;
+  while (!rx.result && n < 40) { rx.push(new Float32Array(600)); rx.push(mineSender.nextFrame()); n++; }
+  assert.ok(rx.result && rx.result.crcOk, 'my transfer did not finish');
+
+  // The rival talks over the top, but never finishes: two frames of a file
+  // that needs four. A transfer that genuinely completes is allowed to
+  // replace the result - the room is free once ours is done - but one that
+  // merely passes through must not take ours away.
+  for (let i = 0; i < 2; i++) { rx.push(new Float32Array(600)); rx.push(rivalSender.nextFrame()); }
+
+  const got = await rx.file();
+  assert.ok(got, 'the finished file was erased by a passing sender');
+  assert.strictEqual(Buffer.compare(Buffer.from(got.bytes), Buffer.from(mine)), 0);
+});
