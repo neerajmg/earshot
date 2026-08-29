@@ -15,6 +15,22 @@ between two physical devices. Everything below it is gated and green.
   text** to send a typed message (shown on the receiver's screen), and a
   **Speed and limits** table computed from the frame format.
 
+## 0.9.3 — 2026-08-29
+
+First real transfer through the air with the OFDM engine: a Mac sent a file
+and a message to an iPhone, both arrived. The reverse direction produced no
+sound at all, which turned out to be an iOS rule the page never obeyed.
+
+- **An iPhone or iPad now actually plays.** Safari starts a page's audio in an
+  "ambient" session, and ambient audio is silenced by the ring/silent switch:
+  Web Audio produced nothing while the page counted frames as if it were
+  sending. The page now says what its audio is for — `playback` when sending,
+  which survives the switch, `play-and-record` when listening. Older Safari
+  has no such setting, so a silent looping audio element promotes the session
+  instead. The engine line under **Advanced** reports which was used.
+- The send card says to take an iPhone off silent, and `/checks/` has a test
+  tone, because no error can report a muted speaker.
+
 ## 0.9.2 — 2026-08-29
 
 An adversarial pass over the 0.9.1 fixes: six agents attacking the build, every

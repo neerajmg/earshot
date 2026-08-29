@@ -26,25 +26,75 @@ allow the microphone. Results appear below the button; screenshot the page when 
 <pre id="bandOut">not run</pre>
 <canvas id="bandCanvas" height="120"></canvas>
 
-<h2>3. Room echo profile</h2>
+<h2>3. Does this device make sound? (iPhone silent switch)</h2>
+<p>Plays two seconds of the same kind of tone a transfer uses. If you hear nothing
+here, the device will send nothing, and the sending page will still look busy.</p>
+<button id="beep">Play a test tone</button>
+<pre id="beepOut">not run</pre>
+
+<h2>4. Room echo profile</h2>
 <p><a href="room.html" style="color:#4cf">Open the room sounder</a> — one chirp out
 loud, shows how long this room keeps ringing. Decides the cyclic prefix.</p>
 
-<h2>4. Loudness (PAPR) check</h2>
+<h2>5. Loudness (PAPR) check</h2>
 <p><a href="papr.html" style="color:#4cf">Open the loudness check</a> — plays an OFDM
 burst and an FSK burst at the same peak, reports the received difference.</p>
 
-<h2>5. 40-minute pipeline soak</h2>
+<h2>6. 40-minute pipeline soak</h2>
 <p><a href="soak.html" style="color:#4cf">Open the soak test</a> — run it once per
 device, screen on, page in front.</p>
 
-<h2>6. Raw capture info</h2>
+<h2>7. Raw capture info</h2>
 <button id="mic">Inspect microphone</button>
 <pre id="micOut">not run</pre>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const MIC = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } };
+
+$('beep').onclick = async () => {
+  const out = $('beepOut');
+  const lines = [];
+  // Say what the audio is for before making any: on iOS an untyped session
+  // is "ambient", and ambient audio is silenced by the side switch.
+  try {
+    if (navigator.audioSession) { navigator.audioSession.type = 'playback'; lines.push('audioSession.type = playback'); }
+    else lines.push('navigator.audioSession: not supported (Safari before 16.4) - using the silent-audio fallback');
+  } catch (e) { lines.push('audioSession refused: ' + e.message); }
+  if (!navigator.audioSession) {
+    try {
+      const n = 4410, bytes = 44 + n * 2, bb = new ArrayBuffer(bytes), v = new DataView(bb);
+      const tag = (o, t) => { for (let i = 0; i < 4; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+      tag(0, 'RIFF'); v.setUint32(4, bytes - 8, true); tag(8, 'WAVE');
+      tag(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, 44100, true); v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+      tag(36, 'data'); v.setUint32(40, n * 2, true);
+      const a = new Audio(URL.createObjectURL(new Blob([bb], { type: 'audio/wav' })));
+      a.loop = true; a.setAttribute('playsinline', ''); a.volume = 0.01;
+      await a.play();
+      lines.push('silent audio element started');
+    } catch (e) { lines.push('silent audio element refused: ' + e.message); }
+  }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  await ctx.resume();
+  lines.push('context ' + ctx.sampleRate + ' Hz, ' + ctx.state);
+  const dur = 2, n = Math.round(dur * ctx.sampleRate);
+  const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    // three of the tones a transfer actually uses, so it sounds like one
+    ch[i] = 0.25 * (Math.sin(2 * Math.PI * 2000 * i / ctx.sampleRate)
+                  + Math.sin(2 * Math.PI * 4000 * i / ctx.sampleRate)
+                  + Math.sin(2 * Math.PI * 6000 * i / ctx.sampleRate)) / 3;
+    const w = Math.min(1, i / 2400, (n - i) / 2400);
+    ch[i] *= w;
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buf; src.connect(ctx.destination); src.start();
+  lines.push('playing 2 s now - do you hear it?');
+  out.textContent = lines.join('\n');
+  setTimeout(async () => { await ctx.close(); out.textContent = lines.join('\n') + '\n\nIf you heard nothing: take the phone off silent and press again.'; }, 2600);
+};
 
 $('rate').onclick = async () => {
   const out = [];

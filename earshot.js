@@ -77,13 +77,63 @@
   }
 
   let ctx = null;
-  async function ensureCtx() {
+  // On iOS a page's audio starts in an "ambient" session, and ambient audio
+  // is silenced by the ring/silent switch. Web Audio then produces nothing
+  // at all: the transfer plays perfectly and the room hears silence. Saying
+  // what the audio is for moves it out of ambient. 'playback' is the one
+  // that survives the switch; 'play-and-record' is what the microphone
+  // needs. earshot never does both at once on one device, so the role picks
+  // the type.
+  let sessionType = null;
+  function claimAudio(role) {
+    const want = role === 'listen' ? 'play-and-record' : 'playback';
+    try {
+      if (navigator.audioSession) { navigator.audioSession.type = want; sessionType = want; return; }
+    } catch (e) { /* fall through to the older trick */ }
+    sessionType = null;
+    // Safari before 16.4 has no audioSession. An <audio> element does play
+    // through the silent switch, and starting one promotes the session so
+    // Web Audio is heard too. It must start inside the user's gesture.
+    if (role !== 'listen') unmute();
+  }
+
+  // A tenth of a second of silence, as a real WAV. An <audio> element needs
+  // actual samples: a zero-length data chunk ends immediately and never
+  // loops, which is the whole point here.
+  function silentWavUrl() {
+    const n = 4410, bytes = 44 + n * 2;
+    const b = new ArrayBuffer(bytes), v = new DataView(b);
+    const tag = (o, t) => { for (let i = 0; i < 4; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    tag(0, 'RIFF'); v.setUint32(4, bytes - 8, true); tag(8, 'WAVE');
+    tag(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, 44100, true); v.setUint32(28, 88200, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    tag(36, 'data'); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  }
+
+  let unmuter = null;
+  function unmute() {
+    try {
+      if (!unmuter) {
+        unmuter = new Audio(silentWavUrl());
+        unmuter.loop = true;
+        unmuter.setAttribute('playsinline', '');
+        unmuter.volume = 0.01;
+      }
+      const p = unmuter.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* nothing more to try */ }
+  }
+
+  async function ensureCtx(role) {
+    claimAudio(role);
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       try { ctx = new AC({ sampleRate: FS }); } catch (e) { ctx = new AC(); }
     }
     if (ctx.state !== 'running') await ctx.resume();
-    ui.engineInfo.textContent = `audio ${ctx.sampleRate} Hz` + (ctx.sampleRate !== FS ? ` (resampling to ${FS})` : '');
+    ui.engineInfo.textContent = `audio ${ctx.sampleRate} Hz` + (ctx.sampleRate !== FS ? ` (resampling to ${FS})` : '')
+      + ` | session ${sessionType || 'not settable on this browser'} | ${ctx.state}`;
     return ctx;
   }
 
@@ -231,7 +281,7 @@
     sendBusy(true);
     say(ui.txStatus, 'Getting the file ready…');
     try {
-      const c = await ensureCtx();
+      const c = await ensureCtx('send');
       const bytes = new Uint8Array(await tx.file.arrayBuffer());
       const prep = await Air.prepare(bytes, tx.file.name, pass ? { passphrase: pass } : undefined);
       tx.sender = new Air.Sender(prep);
@@ -589,7 +639,7 @@
         e.name = 'InsecureContext';
         throw e;
       }
-      const c = await ensureCtx();
+      const c = await ensureCtx('listen');
       // Keep a file that has arrived but is still locked. Mistyping a
       // passphrase and pressing Listen again is the natural recovery, and
       // it used to destroy the bytes: the sender then had to send the whole
