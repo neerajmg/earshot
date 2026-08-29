@@ -47,6 +47,8 @@
   // every receiver then rejected, silently, on both sides.
   const MAX_PAYLOAD = 2 * 1048576 + 1 + 64 + 16 + 12 + 16;
   const QUIET_SECONDS = 10;                          // silence after which another sender may take the room
+  const MAX_ASSEMBLY_TRIES = 3;                      // rebuilds of one manifest before it is written off
+  const MAX_UNPACKED = 64 * 1048576;                 // ceiling on what a payload may expand to
   const PROFILE = 2;                                 // QPSK rate 1/2
   const ILV = Fec.interleaveMap(LANES);
   const F_GZIP = 1;                                  // payload is gzipped
@@ -174,8 +176,27 @@
     if (typeof DecompressionStream === 'undefined') {
       throw new Error('this browser cannot unpack the compressed file (Safari needs 16.4 or newer; Chrome, Edge and Firefox are fine). Receive it again in a newer browser.');
     }
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    // The cap is on the payload that travelled, not on what it expands to.
+    // Read the stream instead of buffering it whole, so a sender that
+    // compressed a gigabyte of zeros into a few frames cannot make the
+    // receiving tab allocate the gigabyte.
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+    const parts = [];
+    let total = 0;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_UNPACKED) {
+        reader.cancel();
+        throw new Error('the sender says this unpacks to more than ' + Math.round(MAX_UNPACKED / 1048576) + ' MB, which earshot will not open.');
+      }
+      parts.push(value);
+    }
+    const out = new Uint8Array(total);
+    let at = 0;
+    for (const part of parts) { out.set(part, at); at += part.length; }
+    return out;
   }
 
   // gzip, but only when it earns its keep. `prepare` and the page's pre-send
@@ -408,6 +429,8 @@
       this.quiet = QUIET_SECONDS * this.fs;          // when that counts as gone
       this.result = null;
       this.stats = { frames: 0, framesOk: 0, droplets: 0, dropletCrcFail: 0, sigFail: 0, manifestBad: 0, otherSession: 0, fileCrcFail: 0 };
+      this.failures = new Map();                     // manifest key -> failed rebuilds
+      this.badManifests = new Set();                 // manifests written off as unsatisfiable
     }
 
     // A push has to be small enough that _drain sees a frame before the ring
@@ -487,8 +510,11 @@
       const bytes = Modem.bitsToBytes(info.subarray(0, FRAME_BYTES * 8));
 
       const raw = readManifest(bytes.subarray(0, MANIFEST_BYTES));
-      const man = manifestOk(raw) ? raw : null;
+      let man = manifestOk(raw) ? raw : null;
       if (raw && !man) this.stats.manifestBad++;
+      // One we have already given up on: never adopt it again, or the
+      // give-up counter simply starts over on the next frame.
+      if (man && this.badManifests.has(man.crc32 + ':' + man.size)) { this.stats.manifestBad++; man = null; }
       let any = false;
       if (man) {
         any = true;
@@ -498,12 +524,24 @@
           // rival has to be heard twice before it costs us the transfer.
           if (this.rival && sameManifest(this.rival, man)) this._adopt(man, sig.session);
           else this.rival = man;
-        } else this.rival = null;
+        } else {
+          this.rival = null;
+          // Re-arm on our own sender. The latch is set in _adopt, which only
+          // runs when the manifest changes, so after a quiet window dropped
+          // it a matching frame used to leave it null for the rest of the
+          // transfer - the guard was gone exactly when a rival was around.
+          this.session = sig.session;
+        }
       }
       // Still a rival after all that: this frame's droplets are pieces of a
       // file we are not collecting, and XOR-ing them into our windows would
       // poison them.
-      const foreign = !!(man && this.manifest && !sameManifest(this.manifest, man));
+      // Foreign means "not ours": a valid manifest for a different file, or
+      // no readable manifest at all once we already know what we are
+      // collecting. Droplet CRC-32 proves a droplet is well formed, not that
+      // it belongs to this file, and XOR-ing a stranger's row into a window
+      // is exactly the poisoning the CRC-32 was widened to prevent.
+      const foreign = !!(this.manifest && (!man || !sameManifest(this.manifest, man)));
       for (let d = 0; !foreign && d < DROPLETS_PER_FRAME; d++) {
         const off = MANIFEST_BYTES + d * DROPLET_BYTES;
         const v = new DataView(bytes.buffer, bytes.byteOffset);
@@ -537,6 +575,24 @@
     // the one we are listening to. A different file means everything
     // collected so far is about the wrong bytes; the same file again (our
     // sender coming back after a gap) costs nothing.
+    // A manifest whose own crc32 is wrong can never be satisfied: every
+    // frame completes the windows, fails the check, drops them and starts
+    // again, forever. Count the failures per manifest and give up on one
+    // that will not converge, rather than reporting failure every 2 s for
+    // as long as the sender runs.
+    _giveUp(man) {
+      const key = man.crc32 + ':' + man.size;
+      const n = (this.failures.get(key) || 0) + 1;
+      this.failures.set(key, n);
+      if (n < MAX_ASSEMBLY_TRIES) return false;
+      this.badManifests.add(key);
+      this.manifest = null;
+      this.session = null;
+      this.rival = null;
+      this.decoders.clear();
+      return true;
+    }
+
     _adopt(man, session) {
       if (!this.manifest || !sameManifest(this.manifest, man)) {
         this.decoders.clear();
@@ -580,7 +636,9 @@
         this.stats.fileCrcFail++;
         this.decoders.clear();
         this.rival = null;
-        if (this.cb.onFailed) this.cb.onFailed({ manifest: this.manifest, stats: this.stats, attempts: this.stats.fileCrcFail, recovering: true });
+        const man = this.manifest;
+        const done = this._giveUp(man);
+        if (this.cb.onFailed) this.cb.onFailed({ manifest: man, stats: this.stats, attempts: this.stats.fileCrcFail, recovering: !done });
         return;
       }
       this.result = { payload: out, crcOk: true, manifest: this.manifest };
@@ -612,7 +670,7 @@
   }
 
   const Air = {
-    FS, SYM_COUNT, FRAME_BYTES, FRAME_SAMPLES, FRAME_SEC, MANIFEST_BYTES, DROPLET_BYTES, DROPLETS_PER_FRAME,
+    FS, SYM_COUNT, FRAME_BYTES, MAX_UNPACKED, FRAME_SAMPLES, FRAME_SEC, MANIFEST_BYTES, DROPLET_BYTES, DROPLETS_PER_FRAME,
     NAME_BYTES, MAX_PAYLOAD, GUARD, GAP, PROFILE, F_GZIP, F_ENCRYPTED, F_NAME_INSIDE,
     framesFor, secondsFor, estimate, prepare, Sender, Receiver,
     packManifest, parseManifest, readManifest, manifestOk, encodeName, wrapName, unwrapName,

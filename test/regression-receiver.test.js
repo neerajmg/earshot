@@ -309,3 +309,74 @@ test('a rival sender passing through does not erase a finished transfer', async 
   assert.ok(got, 'the finished file was erased by a passing sender');
   assert.strictEqual(Buffer.compare(Buffer.from(got.bytes), Buffer.from(mine)), 0);
 });
+
+test('a manifest that can never be satisfied is written off, not retried forever', async () => {
+  // A manifest whose own crc32 is wrong completes its windows on every
+  // frame, fails the file check, drops them and starts again. That used to
+  // repeat for as long as the sender ran - a failure report every 2 s with
+  // no upper bound and no way out.
+  const r = ch.rng(9090);
+  const bytes = new Uint8Array(200).map(() => r.int(256));
+  const prep = await Air.prepare(bytes, 'liar.bin');
+  // corrupt the manifest's file crc32, then repair its CRC-16 so it parses
+  const man = Uint8Array.from(prep.manifest);
+  const v = new DataView(man.buffer);
+  v.setUint32(9, (v.getUint32(9) ^ 0xFFFF) >>> 0);
+  const crc = Modem.crc16(man, 0, Air.MANIFEST_BYTES - 2);
+  man[Air.MANIFEST_BYTES - 2] = crc >> 8; man[Air.MANIFEST_BYTES - 1] = crc & 0xFF;
+  assert.ok(Air.parseManifest(man), 'the doctored manifest should still parse');
+  prep.manifest = man;
+
+  const failures = [];
+  const rx = new Air.Receiver(48000, { onFailed: (f) => failures.push(f) });
+  const tx = new Air.Sender(prep, { session: 2, papr: false });
+  for (let i = 0; i < 14; i++) { rx.push(new Float32Array(600)); rx.push(tx.nextFrame()); }
+
+  assert.ok(failures.length >= 1, 'the receiver never reported the failure');
+  assert.ok(failures.length <= 4, 'reported failure ' + failures.length + ' times; it should give up');
+  assert.strictEqual(failures[failures.length - 1].recovering, false, 'the last report should say it has given up');
+  assert.strictEqual(rx.manifest, null, 'a written-off manifest must not stay adopted');
+});
+
+test('the session latch re-arms, so a rival cannot walk in after a quiet spell', async () => {
+  // this.session was written only in _adopt, which runs when the manifest
+  // CHANGES. A quiet window cleared the latch and a matching frame from our
+  // own sender took the "same manifest" path, which never restored it - so
+  // the two-sender guard was off for the rest of the transfer.
+  const r = ch.rng(555);
+  const mine = new Uint8Array(9000).map(() => r.int(256));
+  const a = new Air.Sender(await Air.prepare(mine, 'mine.bin'), { session: 4, papr: false });
+  const rx = new Air.Receiver(48000);
+
+  rx.push(new Float32Array(600));
+  rx.push(a.nextFrame());
+  assert.strictEqual(rx.session, 4, 'not latched on the first frame');
+
+  // clear the latch the way a long silence does, then hear our sender again
+  rx.session = null;
+  rx.push(new Float32Array(600));
+  rx.push(a.nextFrame());
+  assert.strictEqual(rx.session, 4, 'the latch did not re-arm on our own sender');
+});
+
+test('a frame with no readable manifest does not donate droplets to our windows', async () => {
+  // Droplet CRC-32 proves a droplet is well formed, not that it belongs to
+  // this file. `foreign` used to be false whenever the manifest was
+  // unreadable, so those droplets were XORed into our windows anyway.
+  const r = ch.rng(31337);
+  const mine = new Uint8Array(6000).map(() => r.int(256));
+  const a = new Air.Sender(await Air.prepare(mine, 'mine.bin'), { session: 6, papr: false });
+  const rx = new Air.Receiver(48000);
+  rx.push(new Float32Array(600));
+  rx.push(a.nextFrame());
+  const before = rx.stats.droplets;
+  assert.ok(before > 0, 'no droplets accepted at all');
+
+  // a frame whose manifest is destroyed but whose droplets are intact
+  const b = new Air.Sender(await Air.prepare(mine, 'mine.bin'), { session: 6, papr: false });
+  const orig = b.frameBytes.bind(b);
+  b.frameBytes = () => { const f = orig(); f[0] ^= 0xFF; return f; };   // break the magic
+  rx.push(new Float32Array(600));
+  rx.push(b.nextFrame());
+  assert.strictEqual(rx.stats.droplets, before, 'droplets from a frame with no valid manifest were accepted');
+});

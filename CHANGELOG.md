@@ -15,6 +15,40 @@ between two physical devices. Everything below it is gated and green.
   text** to send a typed message (shown on the receiver's screen), and a
   **Speed and limits** table computed from the frame format.
 
+## 0.9.2 — 2026-08-29
+
+An adversarial pass over the 0.9.1 fixes: six agents attacking the build, every
+finding re-derived by a skeptic before it counted. Two of the fixes had
+introduced defects of their own, and the attack found more that predated them.
+
+- A passphrase-protected file near the 2 MB ceiling built a manifest every
+  receiver refused, because the payload cap was never widened for the hidden
+  name the same release added. Such a file is now refused at the pick instead
+  of being played for an hour to nobody.
+- A sender passing through erased a transfer that had already finished.
+- The two-sender guard latched the session in one place only, and that place
+  ran when the manifest changed — so once a quiet spell dropped the latch, it
+  never came back and the guard was off for the rest of the transfer.
+- A frame whose manifest could not be read still donated its droplets to
+  whatever transfer was in progress. A droplet's checksum proves it is well
+  formed, not that it belongs to this file.
+- A manifest whose own checksum was wrong could never be satisfied, and the
+  receiver rebuilt and failed every two seconds for as long as the sender ran.
+  It gives up after three attempts and says so.
+- Pressing Listen destroyed a file that had arrived but was still waiting for
+  its passphrase — which is exactly what someone does after mistyping one.
+- A damaged assembly silenced the receiver's progress and its "nothing heard"
+  hints for the rest of the session.
+- Compressed payloads are unpacked with a ceiling. 70 MB of zeros compresses
+  to 71 kB, which fits inside the on-air cap and used to be expanded in full
+  by the receiving tab.
+- A passphrase carrying an invisible character from a copy and paste now says
+  so, instead of two people comparing identical-looking keys that differ.
+- The README's advice to pad a file to hide its size was wrong: compression
+  runs before encryption, so padding is squeezed out before the size is
+  fixed. It now says what the size really gives away. The throughput figure
+  said 350-500 bytes a second; the ceiling is 372.
+
 ## 0.9.1 — 2026-08-29
 
 A pre-release audit — code, usability, and an end-to-end functional run — found

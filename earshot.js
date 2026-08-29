@@ -64,8 +64,14 @@
   // A passphrase is never trimmed on either side - trimming changes the
   // secret, and a phone keyboard adds a trailing space readily. Say what is
   // there instead and let the person decide.
+  // Zero-width and other invisible characters ride along in text pasted from
+  // a chat app. They change the key and show nothing, so the two people
+  // compare passphrases that look identical and never agree.
+  const INVISIBLE = /[\u200B-\u200D\u2060\u00AD\uFEFF]/;
+
   function spaceEdges(v) {
     if (!v) return '';
+    if (INVISIBLE.test(v)) return 'contains an invisible character, probably from copy and paste';
     const lead = /^\s/.test(v), trail = /\s$/.test(v);
     return lead && trail ? 'starts and ends with a space' : lead ? 'starts with a space' : trail ? 'ends with a space' : '';
   }
@@ -362,7 +368,7 @@
     lastQuanta: 0, drops: 0,
     fileBytes: null, fileName: null, lastPass: '', stats: null,
     complete: null,                                    // last good completion; tools/make-guide.js waits on it
-    receiving: false, damaged: false, progress: 0,
+    receiving: false, damaged: false, locked: false, progress: 0,
     sumSq: 0, samples: 0, level: 0, lastSound: 0,
     droplets: 0, dropletCrcFail: 0, seenFrames: 0, seenOk: 0, roughFrames: 0,
     hintTimer: null,
@@ -426,6 +432,11 @@
 
   function onFrame(m) {
     rx.receiving = true;
+    // A damaged assembly used to latch until a reset or a success, which
+    // silenced the progress line and every "nothing heard" hint for the
+    // rest of the session. The rebuild starts from nothing, so progress
+    // going forwards again is the signal that it is under way.
+    if (rx.damaged && m.progress > rx.progress) rx.damaged = false;
     rx.progress = m.progress;
     ui.rxProgress.style.display = '';
     ui.rxProgress.value = m.progress;
@@ -496,6 +507,7 @@
   function onFile(m) {
     rx.fileBytes = new Uint8Array(m.bytes);
     rx.fileName = m.name;
+    rx.locked = false;                                 // open now, not merely arrived
     ui.passRow.style.display = 'none';
     ui.save.style.display = '';
     // Only now is the real size known: what travelled was compressed and
@@ -578,7 +590,15 @@
         throw e;
       }
       const c = await ensureCtx();
-      resetReceive();
+      // Keep a file that has arrived but is still locked. Mistyping a
+      // passphrase and pressing Listen again is the natural recovery, and
+      // it used to destroy the bytes: the sender then had to send the whole
+      // file a second time.
+      if (rx.locked && !rx.fileBytes) {
+        say(ui.rxStatus, 'Still listening. The file that already arrived is kept — type its passphrase whenever you like.');
+      } else {
+        resetReceive();
+      }
       // The worker resamples, with one resampler for the whole capture, so
       // the UI thread never touches the samples and no chunk boundary
       // truncates a filter kernel.

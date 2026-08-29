@@ -147,3 +147,16 @@ test('the payload ceiling leaves room for the hidden name and the crypto overhea
     'on-air payload ' + prep.payload.length + ' exceeds the ceiling ' + Air.MAX_PAYLOAD);
   assert.ok(Air.parseManifest(prep.manifest), 'a receiver rejects the manifest for a file at the cap');
 });
+
+test('a payload that expands past the ceiling is refused, not allocated', async () => {
+  // The size check is on what travels, not on what it becomes: 70 MB of
+  // zeros gzips to about 71 kB, which fits comfortably inside the on-air
+  // cap and used to be expanded in full by the receiving tab.
+  const big = new Uint8Array(70 * 1048576);
+  const z = await Air.gzip(big);
+  assert.ok(z.length < Air.MAX_PAYLOAD, 'the bomb should pass the on-air cap: ' + z.length);
+  await assert.rejects(() => Air.gunzip(z), /will not open/);
+  // and an ordinary payload still unpacks
+  const round = await Air.gunzip(await Air.gzip(new TextEncoder().encode('hello')));
+  assert.strictEqual(new TextDecoder().decode(round), 'hello');
+});

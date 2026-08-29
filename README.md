@@ -18,8 +18,10 @@ every step. It is regenerated from the page, so it matches what you see.
 
 ## Honest numbers
 
-Sound through air is a narrow channel. earshot moves roughly **350–500 bytes per
-second** at desk range:
+Sound through air is a narrow channel. A frame carries 768 bytes of your file
+and takes 2.07 seconds, so the ceiling is **372 bytes a second** — less when a
+noisy room costs a frame, more in wall-clock terms for anything that
+compresses:
 
 | size | takes about |
 |---|---|
@@ -41,10 +43,15 @@ encrypted with the contents — it rides inside the payload rather than in the
 manifest — and the passphrase is used exactly as typed on both sides, spaces
 and all.
 
-What a passphrase does **not** hide is the size: the receiver needs the
-payload's length to reassemble it, so that stays in the clear along with the
-fact that a transfer is happening and how long it takes. Pad the file if the
-size is the secret.
+What a passphrase does **not** hide is the size. The receiver needs the
+payload's length to reassemble it, so it travels in the clear along with the
+fact that a transfer is happening and how long it takes. It is worth being
+precise about how much that gives away: the file is compressed before it is
+encrypted, so the number on the air is the compressed length, which is a
+function of the contents. Someone who suspects *which* file you sent can
+compress their copy and compare. Padding does not help, because the padding
+compresses away before the size is fixed. If the size is the secret, encrypt
+the file yourself first and send that.
 
 ## How it works
 
