@@ -532,15 +532,21 @@
     rx.complete = m;
     ui.result.classList.add('show');
     ui.resultName.textContent = `📄 ${m.nameHidden ? 'Encrypted file' : (m.name || 'Received file')}`;
-    say(ui.rxStatus, 'The whole file arrived.', 'ok');
     if (m.needsPassphrase) {
+      rx.locked = true;                                // arrived, still sealed
       ui.passRow.style.display = '';
       ui.resultStatus.textContent = m.nameHidden
         ? 'The sender set a passphrase, and the file name is inside too. Type it to open the file.'
         : 'The sender set a passphrase. Type it to open the file.';
       ui.rxPass.focus();
     } else rx.worker.postMessage({ type: 'file' });
-    stopListen();
+    // Keep listening. A sender plays until a person stops it, so what just
+    // arrived is usually still in the air. Switching the microphone off here
+    // meant the next thing sent - a message after a file - was never heard:
+    // pressing Listen again received the previous transfer one more time and
+    // switched the microphone off again, over and over. A repeat of what we
+    // already hold costs nothing, and anything new is caught.
+    say(ui.rxStatus, 'The whole file arrived. Still listening, in case more follows — press Stop listening when you are done.', 'ok');
   }
 
   // The whole file arrived and its CRC-32 says it is wrong. air.js threw the

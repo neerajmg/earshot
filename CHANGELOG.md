@@ -15,6 +15,22 @@ between two physical devices. Everything below it is gated and green.
   text** to send a typed message (shown on the receiver's screen), and a
   **Speed and limits** table computed from the frame format.
 
+## 0.9.4 — 2026-08-29
+
+Both directions now carry files. Sending a **message** after a file did not
+work, and the reason was on the receiving side.
+
+- **A completed transfer no longer switches the microphone off.** A sender
+  plays until a person stops it, so what just arrived is still in the air.
+  Stopping on completion meant the next thing sent was never heard: pressing
+  Listen received the *previous* transfer one more time and stopped the
+  microphone again, on a loop. The receiver now stays open, ignores repeats
+  of what it already holds, and picks up whatever comes next.
+- A file that arrived but is still waiting for its passphrase is now really
+  marked as such. The guard that keeps it across a Listen press was written
+  in 0.9.2 but nothing ever set the flag, so mistyping a passphrase and
+  pressing Listen still destroyed the bytes.
+
 ## 0.9.3 — 2026-08-29
 
 First real transfer through the air with the OFDM engine: a Mac sent a file

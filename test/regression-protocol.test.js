@@ -160,3 +160,32 @@ test('a payload that expands past the ceiling is refused, not allocated', async 
   const round = await Air.gunzip(await Air.gzip(new TextEncoder().encode('hello')));
   assert.strictEqual(new TextDecoder().decode(round), 'hello');
 });
+
+test('a receiver that has finished one transfer still receives the next', async () => {
+  // The page keeps listening after a completed transfer, so the receiver has
+  // to accept a genuinely different file next - a typed message after a
+  // file, which is the sequence a person actually performs.
+  const r = ch.rng(2468);
+  const fileBytes = new Uint8Array(1200).map(() => r.int(256));
+  const msg = new TextEncoder().encode('Meet at the north gate at six.');
+  const rx = new Air.Receiver(48000);
+
+  const a = new Air.Sender(await Air.prepare(fileBytes, 'notes.bin'), { session: 21, papr: false });
+  let n = 0;
+  while (!rx.result && n < 30) { rx.push(new Float32Array(600)); rx.push(a.nextFrame()); n++; }
+  assert.ok(rx.result, 'the file never arrived');
+  const first = await rx.file();
+  assert.strictEqual(Buffer.compare(Buffer.from(first.bytes), Buffer.from(fileBytes)), 0);
+
+  // the same receiver, no reset, now hears a different transfer
+  const b = new Air.Sender(await Air.prepare(msg, 'message.txt'), { session: 99, papr: false });
+  let got = null;
+  for (let i = 0; i < 30 && !got; i++) {
+    rx.push(new Float32Array(600));
+    rx.push(b.nextFrame());
+    const f = await rx.file();
+    if (f && f.name === 'message.txt') got = f;
+  }
+  assert.ok(got, 'the message never arrived after the file');
+  assert.strictEqual(new TextDecoder().decode(got.bytes), 'Meet at the north gate at six.');
+});

@@ -33,3 +33,24 @@ test('the page can start a second transfer: it resets the worker', () => {
   assert.ok(/type:\s*'reset'/.test(src),
     'earshot.js never posts {type:"reset"}, so a second listen reuses the finished receiver');
 });
+
+test('a completed transfer does not switch the microphone off', () => {
+  // A sender plays until a person stops it, so what just arrived is still in
+  // the air. Stopping the microphone on completion meant the next thing sent
+  // - a message after a file - was never heard: pressing Listen received the
+  // previous transfer again and stopped the microphone again, on a loop.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'earshot.js'), 'utf8');
+  const body = src.slice(src.indexOf('function onComplete'), src.indexOf('function onFailed'));
+  assert.ok(body.length > 100, 'could not find onComplete');
+  assert.ok(!/stopListen\(\)/.test(body), 'onComplete stops listening, so nothing sent after it can arrive');
+  assert.ok(/Still listening/.test(body), 'onComplete should say the microphone is still open');
+});
+
+test('a locked file is actually marked locked, or Listen will throw it away', () => {
+  // rx.locked guards a file that arrived but is still sealed. If nothing
+  // ever sets it, the guard in startListen is dead code and mistyping a
+  // passphrase then pressing Listen destroys the bytes.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'earshot.js'), 'utf8');
+  assert.ok(/rx\.locked = true/.test(src), 'nothing ever sets rx.locked, so the guard never fires');
+  assert.ok(/rx\.locked && !rx\.fileBytes/.test(src), 'startListen should keep an arrived-but-locked file');
+});

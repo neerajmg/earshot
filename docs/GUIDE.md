@@ -110,9 +110,12 @@ still gets it.
    `61 % of the way there, but nothing heard for 14 s — is the sender still
    playing?`
 
-5. When the file is complete, the status says `The whole file arrived.`, the
-   result box names the file and its real size, and listening stops by
-   itself.
+5. When the file is complete, the status says `The whole file arrived. Still
+   listening, in case more follows`, and the result box names the file and its
+   real size. Listening does **not** stop: a sender plays until someone stops
+   it, so what just arrived is usually still in the air, and staying open is
+   what lets a second thing — a message after a file — be heard. Press
+   **Stop listening** when you are done.
 6. Press **Save file**. On a phone that offers a share sheet, that is what
    opens; otherwise the file downloads and the line underneath says where it
    went.
@@ -160,7 +163,7 @@ If the sender set a passphrase, the result box asks for it before
    receiver that missed some. Past the estimate the bar stops measuring and
    the status reads `Still sending — keep going until the other device says
    it has the file, then press Stop sending.` When the other device says
-   `The whole file arrived.`, press **Stop sending**; the status then says
+   `The whole file arrived.`, press **Stop sending** here; the status then says
    `Stopped after 41 s of sound.`
 
    ![Sending](screenshots/product/sending.png)
@@ -296,6 +299,16 @@ measures whether this device can run audio at 48 kHz, whether its microphone
 hears the whole band, the room's echo, the speaker's loudness headroom, and
 a forty-minute soak of the receive pipeline.
 
+## Sending a second thing
+
+The two devices can keep going. The receiving one stays on after a file
+arrives, so once the sender has stopped, type a message on it and press
+**Send message**, or pick another file — the receiving page will show
+whatever comes next.
+
+One thing to know: the receiving page holds only the last thing that
+arrived. Press **Save file** before sending the next one.
+
 ## When it does not work
 
 ![Receiving through noise](screenshots/product/receiving-noisy.png)
@@ -323,6 +336,7 @@ a forty-minute soak of the receive pipeline.
 | `A message is sent without a passphrase.` | **Send message** was pressed with something in the passphrase box | Clear the box, or save the text as a file and use **Start sending** |
 | `Over 2 MB — sound is too slow for a file that big. Send something smaller, or zip it first.` | The file is over the limit | Send something smaller, or zip it first |
 | `transfer not complete — wait until the whole file has arrived.` | **Unlock** was pressed before the transfer finished | Wait for `The whole file arrived.` |
+| A message sent after a file never appears | Older versions stopped listening when a file arrived, so the sender's repeats of the *first* transfer were all the receiver ever heard | Reload both pages; the receiver now stays on after a file, and the sender should be stopped before the next thing is sent |
 | **Save file** on a phone downloads instead of sharing | The share sheet was dismissed, or this browser cannot share files | It is the same file; look in the browser's downloads |
 
 When a transfer fails in a way this table does not cover, the lab page can
