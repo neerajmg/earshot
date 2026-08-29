@@ -53,6 +53,42 @@ compress their copy and compare. Padding does not help, because the padding
 compresses away before the size is fixed. If the size is the secret, encrypt
 the file yourself first and send that.
 
+## Where it runs
+
+Nothing in earshot is tied to one platform: it is a page using Web Audio, and
+the only platform-specific code is the iOS audio-session claim, which is inert
+elsewhere.
+
+| | sending | receiving |
+|---|---|---|
+| Chrome, Edge (any OS) | yes | yes |
+| Android Chrome | yes | yes |
+| macOS Safari, iOS Safari 16.4+ | yes | yes |
+| Firefox 113+ (any OS) | yes | yes |
+| Older Safari (before 16.4) | yes | opens uncompressed transfers only |
+
+Receiving needs the microphone, so it needs the https page — a copy opened from
+disk can send but not receive. Sending needs no permissions at all.
+
+Verified: macOS Chrome, iOS Safari (a real transfer both ways), and Linux
+Chromium on every push — CI runs the whole suite and drives the real page in
+headless Chromium on Ubuntu. Android, Windows and Firefox follow from the same
+APIs but nobody has run a transfer on them yet; **/checks/** answers the
+question for any device in one tap, and reports exactly what is missing.
+
+Two things differ by platform rather than break:
+
+- **An iPhone or iPad must be off silent to send.** The page asks for a
+  `playback` audio session, which survives the switch, and falls back to an
+  older trick on Safari before 16.4 — but check the tone on `/checks/` if a
+  phone seems to send nothing.
+- **Compression** needs `CompressionStream` (Firefox 113+, Safari 16.4+). A
+  browser without it still sends, just without compressing; it cannot open a
+  transfer that *was* compressed.
+
+The command-line tools work on macOS, Linux and Windows, and need `ffmpeg` for
+anything involving a real microphone.
+
 ## How it works
 
 The sender plays OFDM — 116 QPSK subcarriers between 1.5 and 7.5 kHz, 37.5

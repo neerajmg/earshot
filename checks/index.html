@@ -26,6 +26,10 @@ allow the microphone. Results appear below the button; screenshot the page when 
 <pre id="bandOut">not run</pre>
 <canvas id="bandCanvas" height="120"></canvas>
 
+<h2>0. Will earshot work on this device?</h2>
+<button id="caps">Check this browser</button>
+<pre id="capsOut">not run</pre>
+
 <h2>3. Does this device make sound? (iPhone silent switch)</h2>
 <p>Plays two seconds of the same kind of tone a transfer uses. If you hear nothing
 here, the device will send nothing, and the sending page will still look busy.</p>
@@ -51,6 +55,40 @@ device, screen on, page in front.</p>
 <script>
 const $ = (id) => document.getElementById(id);
 const MIC = { audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } };
+
+$('caps').onclick = async () => {
+  const rows = [];
+  const yes = (b) => (b ? 'yes' : 'NO');
+  const need = [];
+  rows.push('userAgent      ' + navigator.userAgent);
+  rows.push('secure context ' + yes(window.isSecureContext) + '   (the microphone needs this)');
+  if (!window.isSecureContext) need.push('Open the https page, not a local file: https://neerajmg.github.io/earshot/');
+  const hasAC = !!(window.AudioContext || window.webkitAudioContext);
+  rows.push('Web Audio      ' + yes(hasAC));
+  if (!hasAC) need.push('This browser has no Web Audio at all; earshot cannot run here.');
+  const hasGUM = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  rows.push('microphone API ' + yes(hasGUM) + '   (needed to receive; sending works without it)');
+  const hasWorklet = !!(hasAC && (window.AudioContext || window.webkitAudioContext).prototype.audioWorklet !== undefined
+    || (window.AudioWorkletNode !== undefined));
+  rows.push('AudioWorklet   ' + yes(hasWorklet) + '   (falls back to the older capture if missing)');
+  rows.push('Worker         ' + yes(typeof Worker !== 'undefined'));
+  const hasComp = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+  rows.push('compression    ' + yes(hasComp) + '   (without it, text is sent uncompressed and takes longer)');
+  if (!hasComp) need.push('No CompressionStream: this browser can still send, but cannot open a compressed transfer. Firefox 113+, Safari 16.4+, any recent Chrome or Edge.');
+  const hasCrypto = !!(window.crypto && window.crypto.subtle);
+  rows.push('encryption     ' + yes(hasCrypto) + '   (needed only for passphrases)');
+  rows.push('audioSession   ' + (navigator.audioSession ? 'yes (iOS silent switch handled)' : 'not present (only Safari has it)'));
+  rows.push('share sheet    ' + (navigator.canShare ? 'yes' : 'no, files download instead'));
+  rows.push('wake lock      ' + (navigator.wakeLock ? 'yes' : 'no, the screen may sleep during a long transfer'));
+  try {
+    const c = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+    rows.push('48 kHz audio   ' + (c.sampleRate === 48000 ? 'yes' : 'no, got ' + c.sampleRate + ' (earshot resamples)'));
+    await c.close();
+  } catch (e) { rows.push('48 kHz audio   could not test: ' + e.message); }
+  rows.push('');
+  rows.push(need.length ? 'To fix:\n- ' + need.join('\n- ') : 'Everything earshot needs is here.');
+  $('capsOut').textContent = rows.join('\n');
+};
 
 $('beep').onclick = async () => {
   const out = $('beepOut');

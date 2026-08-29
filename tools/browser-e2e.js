@@ -30,10 +30,23 @@ const seconds = Number(opt('--seconds', 120));
 const filePath = opt('--file', null);
 function findChrome() {
   const { execSync } = require('child_process');
+  const fs = require('fs');
   if (process.env.CHROME) return process.env.CHROME;
-  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
-    try { return execSync('command -v ' + name, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || null; } catch (e) { /* keep looking */ }
+  const win = process.platform === 'win32';
+  const which = win ? 'where ' : 'command -v ';
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome', 'msedge']) {
+    try {
+      const hit = execSync(which + name, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().split(/\r?\n/)[0].trim();
+      if (hit) return hit;
+    } catch (e) { /* keep looking */ }
   }
+  for (const p of [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  ]) { try { if (fs.existsSync(p)) return p; } catch (e) { /* next */ } }
   return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 }
 const CHROME = findChrome();

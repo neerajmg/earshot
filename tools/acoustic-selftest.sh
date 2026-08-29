@@ -9,6 +9,17 @@
 # the output is not muted. Pick the mic with MIC_INDEX (see the device list
 # ffmpeg prints on failure).
 set -e
+
+# macOS only: it uses afplay and ffmpeg's avfoundation input. On Linux or
+# Windows, use the portable path instead - play the WAV with any player and
+# run the listener in another terminal:
+#   node tools/make-wav.js FILE /tmp/tx.wav robust 1
+#   node tools/listen.js --ofdm --seconds 90     # in one terminal
+#   ffplay -nodisp -autoexit /tmp/tx.wav          # in another
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "this script is macOS only; see the comment at the top for the portable path" >&2
+  exit 2
+fi
 PRESET=${1:-robust}
 FILE=${2:-README.md}
 MIC_INDEX=${MIC_INDEX:-}

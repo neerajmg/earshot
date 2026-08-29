@@ -1,6 +1,6 @@
 {
   "name": "earshot",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Send files between devices through the air with sound. A browser acoustic modem: no install, no network, no pairing.",
   "scripts": {
     "test": "node --test",

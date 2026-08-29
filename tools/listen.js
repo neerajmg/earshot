@@ -27,23 +27,62 @@ const outPath = opt('--out', null);
 const keepPath = opt('--keep', null);
 const FSR = 48000;
 
-let mic = process.env.MIC_INDEX;
-if (!mic) {
-  const list = execFileSync('sh', ['-c', 'ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true']).toString();
-  const m = list.match(/\[(\d+)\] (?:MacBook.*Microphone|Built-in Microphone)/);
-  if (!m) { console.error('could not find the built-in microphone; set MIC_INDEX. Devices:\n' + list); process.exit(2); }
-  mic = m[1];
+// ffmpeg names microphones differently on every system. MIC overrides the
+// device on any of them; MIC_INDEX is kept for the macOS index it used to
+// take.
+function captureInput() {
+  const override = process.env.MIC || process.env.MIC_INDEX;
+  if (process.platform === 'darwin') {
+    if (override) return { fmt: 'avfoundation', dev: ':' + override, label: 'mic :' + override };
+    const list = run('ffmpeg -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true');
+    const m = list.match(/\[(\d+)\] (?:MacBook.*Microphone|Built-in Microphone)/);
+    if (!m) {
+      console.error('could not find the built-in microphone. Set MIC to an index from this list:\n' + list);
+      process.exit(2);
+    }
+    return { fmt: 'avfoundation', dev: ':' + m[1], label: 'mic :' + m[1] };
+  }
+  if (process.platform === 'win32') {
+    if (override) return { fmt: 'dshow', dev: 'audio=' + override, label: override };
+    const list = run('ffmpeg -hide_banner -f dshow -list_devices true -i dummy 2>&1 || true');
+    const m = list.match(/"([^"]+)"\s*\r?\n[^\n]*\(audio\)/) || list.match(/\(audio\)[^\n]*\n[^"]*"([^"]+)"/);
+    if (!m) {
+      console.error('could not find a microphone. Set MIC to a device name from this list:\n' + list);
+      process.exit(2);
+    }
+    return { fmt: 'dshow', dev: 'audio=' + m[1], label: m[1] };
+  }
+  // Linux and the rest: PulseAudio or PipeWire first, ALSA if that is absent.
+  if (override) {
+    const fmt = /^(hw|plughw|default)/.test(override) ? 'alsa' : 'pulse';
+    return { fmt, dev: override, label: fmt + ' ' + override };
+  }
+  const formats = run('ffmpeg -hide_banner -devices 2>&1 || true');
+  if (/\bpulse\b/.test(formats)) return { fmt: 'pulse', dev: 'default', label: 'pulse default' };
+  if (/\balsa\b/.test(formats)) return { fmt: 'alsa', dev: 'default', label: 'alsa default' };
+  console.error('ffmpeg here has neither a pulse nor an alsa input. Set MIC and rerun.');
+  process.exit(2);
 }
+
+function run(cmd) {
+  try { return execFileSync(process.platform === 'win32' ? 'cmd' : 'sh', [process.platform === 'win32' ? '/c' : '-c', cmd]).toString(); }
+  catch (e) { return String((e && e.stdout) || ''); }
+}
+
+let input;
+try { execFileSync(process.platform === 'win32' ? 'where' : 'command', process.platform === 'win32' ? ['ffmpeg'] : ['-v', 'ffmpeg'], { stdio: 'ignore' }); }
+catch (e) { console.error('ffmpeg is not on PATH. Install it (brew install ffmpeg, apt install ffmpeg, winget install ffmpeg) and try again.'); process.exit(2); }
+input = captureInput();
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'modem-listen-'));
 const rec = path.join(work, 'rec.wav');
 console.log(ofdm
-  ? `listening on mic :${mic} for ${seconds} s, engine ofdm (1500-7500 Hz)`
-  : `listening on mic :${mic} for ${seconds} s, preset ${preset.name} (${preset.spaceHz}/${preset.markHz} Hz at ${preset.baud} baud)`);
+  ? `listening on ${input.label} for ${seconds} s, engine ofdm (1500-7500 Hz)`
+  : `listening on ${input.label} for ${seconds} s, preset ${preset.name} (${preset.spaceHz}/${preset.markHz} Hz at ${preset.baud} baud)`);
 console.log('play the WAV on the other device now; Ctrl-C stops early\n');
 
 // ffmpeg writes the WAV as it goes; we decode it once it stops.
-const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'avfoundation', '-i', ':' + mic,
+const ff = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-f', input.fmt, '-i', input.dev,
   '-t', String(seconds), '-ac', '1', '-ar', String(FSR), '-sample_fmt', 's16', rec], { stdio: 'inherit' });
 
 let done = false;

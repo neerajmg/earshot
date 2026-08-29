@@ -15,6 +15,24 @@ between two physical devices. Everything below it is gated and green.
   text** to send a typed message (shown on the receiver's screen), and a
   **Speed and limits** table computed from the frame format.
 
+## 0.9.5 — 2026-08-29
+
+Portability, after the question "what about Android and Windows?" turned out
+to have no written answer.
+
+- `/checks/` opens with **Check this browser**: secure context, Web Audio,
+  microphone, AudioWorklet, Worker, compression, encryption, 48 kHz, share
+  sheet, wake lock — and, when something is missing, what to do about it.
+- The README says where earshot runs and what differs by platform, and marks
+  plainly what is verified against what merely follows from the same APIs.
+- `tools/listen.js` records on Linux (PulseAudio or ALSA) and Windows
+  (DirectShow) as well as macOS, picking the device by name rather than by a
+  fixed index — the index had already shifted on the development machine.
+  `MIC` overrides it anywhere.
+- Chrome is found on Windows too, and Edge counts.
+- `tools/acoustic-selftest.sh` is macOS-only and now says so instead of
+  failing obscurely, with the portable two-terminal equivalent in a comment.
+
 ## 0.9.4 — 2026-08-29
 
 Both directions now carry files. Sending a **message** after a file did not
